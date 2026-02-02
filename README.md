@@ -11,6 +11,5 @@ Global tooling workspace. Each toolset is isolated under `tools/<context>/` with
 Enter a toolset directory and follow its README.
 
 ```bash
-cd /Users/joachimzeelmaekers/Work/ai-tooling/tools/prompt-analysis
 make all
 ```
