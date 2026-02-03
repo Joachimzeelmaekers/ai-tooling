@@ -12,7 +12,7 @@ help:
 		"  stats  - Generate output/*.csv and *.svg" \
 		"  clean  - Remove output/ directory"
 
-all: report pairs chunks stats
+all: pairs report chunks stats
 
 report:
 	@mkdir -p $(OUTPUT_DIR)
