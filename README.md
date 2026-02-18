@@ -5,6 +5,7 @@ Global tooling workspace. Each toolset is isolated under `tools/<context>/` with
 ## Toolsets
 
 - `tools/prompt-analysis` - Analyze Claude/OpenCode sessions, generate reports, stats, and chunks.
+- `tools/opencode-token-report` - Token usage report by model from local opencode session data.
 
 ## Usage
 
