@@ -32,7 +32,7 @@ PROVIDER_COLORS = {
     "claude-code": "#d97706",
     "opencode": "#6366f1",
     "cursor": "#22d3ee",
-    "codex": "#10b981",
+    "codex": "#ef4444",
 }
 
 

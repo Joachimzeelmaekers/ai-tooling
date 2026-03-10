@@ -12,7 +12,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 from providers.base import ProviderResult
-from providers import opencode, claude, cursor
+from providers import opencode, claude, cursor, codex
 from pricing import estimate_cost
 from report import build_html
 
@@ -25,6 +25,7 @@ PROVIDERS = [
     claude.load,
     opencode.load,
     cursor.load,
+    codex.load,
 ]
 
 
