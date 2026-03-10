@@ -27,7 +27,8 @@ def load() -> ProviderResult:
 
     try:
         conn = sqlite3.connect(f"file:{CURSOR_DB}?mode=ro", uri=True)
-    except Exception:
+    except Exception as e:
+        print(f"  [cursor] DB error: {e}", file=__import__("sys").stderr)
         return ProviderResult(name=PROVIDER_NAME, source="db error")
 
     messages = []
@@ -80,6 +81,10 @@ def load() -> ProviderResult:
         "SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'"
     ).fetchall()
 
+    total_bubbles = len(rows)
+    skipped_no_token_count = 0
+    skipped_zero_tokens = 0
+
     for key, value in rows:
         if value is None:
             continue
@@ -90,10 +95,12 @@ def load() -> ProviderResult:
 
         tc = d.get("tokenCount")
         if not isinstance(tc, dict):
+            skipped_no_token_count += 1
             continue
         inp = tc.get("inputTokens", 0)
         out = tc.get("outputTokens", 0)
         if inp + out == 0:
+            skipped_zero_tokens += 1
             continue
 
         # Parse key: bubbleId:<composerId>:<bubbleId>
@@ -120,6 +127,12 @@ def load() -> ProviderResult:
         ))
 
     conn.close()
+
+    # Debug output
+    import sys
+    print(f"  [cursor] Bubbles: {total_bubbles} total, {len(messages)} captured, "
+          f"{skipped_zero_tokens} skipped (zero tokens), {skipped_no_token_count} skipped (no tokenCount)",
+          file=sys.stderr)
 
     return ProviderResult(
         name=PROVIDER_NAME,
