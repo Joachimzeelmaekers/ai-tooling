@@ -15,18 +15,21 @@ from providers.base import ProviderResult
 from providers import opencode, claude, cursor, codex
 from pricing import estimate_cost
 from report import build_html
+from cache import cached_load
 
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 REPORTS_DIR = os.path.join(TOOL_DIR, "output")
 DATA_DIR = os.path.join(TOOL_DIR, "data")
 
-# Register providers here — add new ones as simple imports
+# Register providers here — (name, load_fn)
 PROVIDERS = [
-    claude.load,
-    opencode.load,
-    cursor.load,
-    codex.load,
+    ("claude-code", claude.load),
+    ("opencode", opencode.load),
+    ("cursor", cursor.load),
+    ("codex", codex.load),
 ]
+
+MAX_REPORTS = 3
 
 
 def fmt_tokens(n: int) -> str:
@@ -75,8 +78,8 @@ def aggregate(results: list[ProviderResult]) -> dict:
         provider_totals[result.name]["sessions"] += result.sessions
 
         for msg in result.messages:
-            # Model key: use just the model name (provider tracked separately)
-            model_key = msg.model
+            # Include provider in key to avoid collisions (e.g. gpt-5.3-codex used by both opencode and codex)
+            model_key = f"{msg.model} [{msg.provider}]" if msg.provider else msg.model
 
             ms = model_stats[model_key]
             ms["messages"] += 1
@@ -147,6 +150,7 @@ def aggregate(results: list[ProviderResult]) -> dict:
         "total_messages": total_messages,
         "total_sessions": total_sessions,
         "month_cost_estimated": month_cost_estimated,
+        "month_stats": dict(month_stats),
         "current_month": current_month,
     }
 
@@ -181,13 +185,23 @@ def snapshot_data(results: list[ProviderResult]):
     print(f"  Data snapshot: {snapshot_file}")
 
 
+def _cleanup_reports(reports_dir: str):
+    """Keep only the latest MAX_REPORTS timestamped report files."""
+    import glob as g
+    files = sorted(g.glob(os.path.join(reports_dir, "report_*.html")))
+    if len(files) > MAX_REPORTS:
+        for old in files[:-MAX_REPORTS]:
+            os.remove(old)
+            print(f"  Removed old report: {os.path.basename(old)}")
+
+
 def main():
     os.makedirs(REPORTS_DIR, exist_ok=True)
 
     print("Loading providers...")
     results = []
-    for load_fn in PROVIDERS:
-        result = load_fn()
+    for name, load_fn in PROVIDERS:
+        result = cached_load(load_fn, name)
         print(f"  {result.name}: {len(result.messages)} messages, {result.sessions} sessions ({result.source})")
         results.append(result)
 
@@ -214,6 +228,9 @@ def main():
         f.write(html)
     with open(latest, "w") as f:
         f.write(html)
+
+    # Clean up old reports, keep only the latest MAX_REPORTS
+    _cleanup_reports(REPORTS_DIR)
 
     print(f"\nReport saved:")
     print(f"  {out_file}")

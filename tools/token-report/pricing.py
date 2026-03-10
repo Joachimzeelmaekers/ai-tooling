@@ -69,7 +69,9 @@ PRICING = {
 
 def estimate_cost(model: str, input_tokens: int, output_tokens: int,
                   cache_read_tokens: int, cache_write_tokens: int = 0) -> float:
-    price = PRICING.get(model, (0.0, 0.0, 0.0, 0.0))
+    # Strip provider suffix e.g. "gpt-5.3-codex [codex]" -> "gpt-5.3-codex"
+    base_model = model.split(" [")[0] if " [" in model else model
+    price = PRICING.get(base_model, (0.0, 0.0, 0.0, 0.0))
     inp_price, out_price, cr_price, cw_price = price
     return (
         input_tokens / 1_000_000 * inp_price

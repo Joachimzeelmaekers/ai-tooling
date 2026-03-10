@@ -44,6 +44,7 @@ def build_html(data: dict) -> str:
     total_msgs = data["total_messages"]
     total_sess = data["total_sessions"]
     month_cost = data.get("month_cost_estimated", 0.0)
+    month_stats = data.get("month_stats", {})
     current_month = data.get("current_month", "")
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -70,6 +71,7 @@ def build_html(data: dict) -> str:
             "reasoning": ms["reasoning"],
             "cache_read": ms["cache_read"],
             "cost_estimated": round(ms["cost_estimated"], 2),
+            "month_cost": round(month_stats.get(k, {}).get("cost_estimated", 0.0), 2),
         }
         for k, ms in sorted_models
     ])
@@ -455,7 +457,6 @@ const RAW_TIMELINE = {timeline_raw};
 const TIMELINE_MODELS = {timeline_models};
 const PROJECTS = {projects_js};
 const PROVIDER_COLORS = {json.dumps(PROVIDER_COLORS)};
-const MONTH_COST = {month_cost};
 const CURRENT_MONTH = "{current_month}";
 const TOTAL_SESSIONS = {total_sess};
 
@@ -554,7 +555,7 @@ function renderSummaryCards() {{
     <div class="card"><div class="label">Reasoning</div><div class="value" style="color:#f59e0b">${{fmtCompact(rea)}}</div><div class="sub">${{fmtNum(rea)}}</div></div>
     <div class="card"><div class="label">Cache Read</div><div class="value" style="color:#10b981">${{fmtCompact(cr)}}</div><div class="sub">${{fmtNum(cr)}}</div></div>
     <div class="card"><div class="label">Est. Cost (all time)</div><div class="value" style="color:#22d3ee">${{fmtCost(cost)}}</div><div class="sub">based on public pricing</div></div>
-    <div class="card"><div class="label">${{CURRENT_MONTH}} Cost</div><div class="value" style="color:#f59e0b">${{fmtCost(MONTH_COST)}}</div><div class="sub">this month</div></div>
+    <div class="card"><div class="label">${{CURRENT_MONTH}} Cost</div><div class="value" style="color:#f59e0b">${{fmtCost(models.reduce((s, m) => s + m.month_cost, 0))}}</div><div class="sub">this month</div></div>
   `;
 
   if (activeProvider === "all") {{
