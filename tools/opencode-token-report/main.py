@@ -141,6 +141,16 @@ def aggregate(messages: list, sessions: dict) -> dict:
     total_messages = 0
     total_sessions = set()
 
+    now = datetime.now(timezone.utc)
+    current_month = now.strftime("%Y-%m")
+
+    month_stats = defaultdict(lambda: {
+        "messages": 0,
+        "input": 0, "output": 0, "reasoning": 0,
+        "cache_read": 0, "cache_write": 0,
+        "cost_logged": 0.0,
+    })
+
     for msg in messages:
         model_key = f"{msg.get('providerID','unknown')}/{msg.get('modelID','unknown')}"
         t = msg["tokens"]
@@ -180,6 +190,20 @@ def aggregate(messages: list, sessions: dict) -> dict:
         total_sessions.add(msg.get("sessionID", ""))
         total_messages += 1
 
+        # Current month bucket
+        if ts_ms:
+            dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+            month_key = dt.strftime("%Y-%m")
+            if month_key == current_month:
+                ms_month = month_stats[model_key]
+                ms_month["messages"] += 1
+                ms_month["input"] += inp
+                ms_month["output"] += out
+                ms_month["reasoning"] += rea
+                ms_month["cache_read"] += cr
+                ms_month["cache_write"] += cw
+                ms_month["cost_logged"] += cost
+
     # -----------------------------------------------------------------------
     # Compute estimated cost per model
     # -----------------------------------------------------------------------
@@ -192,12 +216,26 @@ def aggregate(messages: list, sessions: dict) -> dict:
             + ms["cache_read"] / 1_000_000 * cr_price
         )
 
+    # Current month cost
+    month_cost_estimated = 0.0
+    for model_key, ms in month_stats.items():
+        price = PRICING.get(model_key, (0.0, 0.0, 0.0))
+        inp_price, out_price, cr_price = price
+        ms["cost_estimated"] = (
+            ms["input"]      / 1_000_000 * inp_price
+            + ms["output"]   / 1_000_000 * out_price
+            + ms["cache_read"] / 1_000_000 * cr_price
+        )
+        month_cost_estimated += ms["cost_estimated"]
+
     return {
         "model_stats": dict(model_stats),
         "hourly": {k: dict(v) for k, v in hourly.items()},
         "project_stats": {k: dict(v) for k, v in project_stats.items()},
         "total_messages": total_messages,
         "total_sessions": len(total_sessions),
+        "month_cost_estimated": month_cost_estimated,
+        "current_month": current_month,
     }
 
 
@@ -211,6 +249,8 @@ def build_html(data: dict) -> str:
     project_stats = data["project_stats"]
     total_msgs    = data["total_messages"]
     total_sess    = data["total_sessions"]
+    month_cost    = data.get("month_cost_estimated", 0.0)
+    current_month = data.get("current_month", "")
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -342,7 +382,7 @@ def build_html(data: dict) -> str:
 
     .summary-grid {{
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 1rem;
       margin-bottom: 2.5rem;
     }}
@@ -496,6 +536,7 @@ def build_html(data: dict) -> str:
 
     @media (max-width: 900px) {{
       .charts-grid {{ grid-template-columns: 1fr; }}
+      .summary-grid {{ grid-template-columns: repeat(2, 1fr); }}
     }}
   </style>
 </head>
@@ -544,6 +585,11 @@ def build_html(data: dict) -> str:
       <div class="label">Est. Cost</div>
       <div class="value" style="color:#22d3ee">{fmt_cost(grand_cost_est)}</div>
       <div class="sub">based on pricing</div>
+    </div>
+    <div class="card">
+      <div class="label">{current_month} Cost</div>
+      <div class="value" style="color:#f59e0b">{fmt_cost(month_cost)}</div>
+      <div class="sub">this month</div>
     </div>
   </div>
 

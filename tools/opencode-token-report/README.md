@@ -5,8 +5,13 @@ Generates a self-contained HTML report of token usage from local [opencode](http
 ## Usage
 
 ```bash
+# Generate report once
 make report
 open output/latest.html
+
+# Or start local server (regenerates on each refresh)
+make serve
+# Then open http://localhost:9999
 ```
 
 Each run also saves `output/report_YYYY-MM-DD_HH-MM-SS.html`.

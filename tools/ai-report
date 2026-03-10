@@ -1,0 +1,25 @@
+#!/bin/bash
+# ai-report: Open token usage report in browser with auto-regeneration
+# Usage: ai-report [serve|open]
+
+AI_TOOLING_DIR="/Users/joachim.zeelmaekers/work/ai-tooling"
+REPORT_DIR="$AI_TOOLING_DIR/tools/opencode-token-report"
+
+case "${1:-serve}" in
+    serve)
+        cd "$REPORT_DIR" && make serve
+        ;;
+    open)
+        cd "$REPORT_DIR" && make open
+        ;;
+    help|--help|-h)
+        echo "Usage: ai-report [serve|open]"
+        echo "  serve - Start local server with auto-regeneration (default)"
+        echo "  open  - Just open the latest report in browser"
+        ;;
+    *)
+        echo "Unknown command: $1"
+        echo "Usage: ai-report [serve|open]"
+        exit 1
+        ;;
+esac
