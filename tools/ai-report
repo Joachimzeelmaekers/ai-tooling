@@ -2,7 +2,8 @@
 # ai-report: Open token usage report in browser with auto-regeneration
 # Usage: ai-report [serve|open]
 
-AI_TOOLING_DIR="/Users/joachim.zeelmaekers/work/ai-tooling"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+AI_TOOLING_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPORT_DIR="$AI_TOOLING_DIR/tools/token-report"
 
 case "${1:-serve}" in
