@@ -155,11 +155,121 @@ def aggregate(results: list[ProviderResult]) -> dict:
     }
 
 
+def _msg_to_dict(msg) -> dict:
+    """Convert TokenMessage to dict for JSON serialization."""
+    return {
+        "provider": msg.provider,
+        "model": msg.model,
+        "input_tokens": msg.input_tokens,
+        "output_tokens": msg.output_tokens,
+        "reasoning_tokens": msg.reasoning_tokens,
+        "cache_read_tokens": msg.cache_read_tokens,
+        "cache_write_tokens": msg.cache_write_tokens,
+        "cost": msg.cost,
+        "timestamp_ms": msg.timestamp_ms,
+        "session_id": msg.session_id,
+        "project": msg.project,
+    }
+
+
+def _dict_to_msg(d: dict):
+    """Convert dict back to TokenMessage."""
+    from providers.base import TokenMessage
+    return TokenMessage(
+        provider=d["provider"],
+        model=d["model"],
+        input_tokens=d["input_tokens"],
+        output_tokens=d["output_tokens"],
+        reasoning_tokens=d["reasoning_tokens"],
+        cache_read_tokens=d["cache_read_tokens"],
+        cache_write_tokens=d["cache_write_tokens"],
+        cost=d["cost"],
+        timestamp_ms=d["timestamp_ms"],
+        session_id=d["session_id"],
+        project=d["project"],
+    )
+
+
+def _load_all_snapshots() -> list:
+    """Load only the most recent snapshot (contains all historical data)."""
+    import glob
+    snapshots = glob.glob(os.path.join(DATA_DIR, "snapshots", "*.json"))
+    if not snapshots:
+        return []
+    # Just load the latest - it already contains all historical data
+    latest = max(snapshots)
+    try:
+        with open(latest) as f:
+            return [json.load(f)]
+    except Exception:
+        return []
+
+
+def _merge_results(fresh_results: list[ProviderResult]) -> list[ProviderResult]:
+    """Merge fresh provider data with historical snapshots to get complete dataset."""
+    import glob
+    
+    # Dedupe key: (provider, session_id, timestamp_ms, model, input_tokens, output_tokens)
+    seen = set()
+    merged_by_provider = defaultdict(list)
+    
+    # First, load all historical snapshots
+    for snapshot in _load_all_snapshots():
+        for provider_name, provider_data in snapshot.items():
+            for msg_dict in provider_data.get("messages", []):
+                key = (
+                    msg_dict["provider"],
+                    msg_dict["session_id"],
+                    msg_dict["timestamp_ms"],
+                    msg_dict["model"],
+                    msg_dict["input_tokens"],
+                    msg_dict["output_tokens"],
+                )
+                if key not in seen:
+                    seen.add(key)
+                    merged_by_provider[provider_name].append(msg_dict)
+    
+    # Then add fresh data (to capture new sessions since last snapshot)
+    for result in fresh_results:
+        for msg in result.messages:
+            msg_dict = _msg_to_dict(msg)
+            key = (
+                msg_dict["provider"],
+                msg_dict["session_id"],
+                msg_dict["timestamp_ms"],
+                msg_dict["model"],
+                msg_dict["input_tokens"],
+                msg_dict["output_tokens"],
+            )
+            if key not in seen:
+                seen.add(key)
+                merged_by_provider[result.name].append(msg_dict)
+    
+    # Convert back to ProviderResult
+    from providers.base import ProviderResult
+    results = []
+    for name, load_fn in PROVIDERS:
+        messages = [_dict_to_msg(m) for m in merged_by_provider.get(name, [])]
+        sessions = len(set(m.session_id for m in messages))
+        # Determine source - if has historical data, note it
+        source = "merged"
+        if messages:
+            source = "merged+snapshot"
+        results.append(ProviderResult(
+            name=name,
+            messages=messages,
+            sessions=sessions,
+            source=source,
+        ))
+    
+    return results
+
+
 def snapshot_data(results: list[ProviderResult]):
-    """Save a timestamped snapshot of all provider data for historical tracing."""
-    os.makedirs(DATA_DIR, exist_ok=True)
-    ts = datetime.now().strftime("%Y-%m-%d")
-    snapshot_file = os.path.join(DATA_DIR, f"snapshot_{ts}.json")
+    """Save a timestamped snapshot with ALL raw messages for full reproducibility."""
+    os.makedirs(os.path.join(DATA_DIR, "snapshots"), exist_ok=True)
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    snapshot_file = os.path.join(DATA_DIR, "snapshots", f"{ts}.json")
 
     snapshot = {}
     for result in results:
@@ -167,18 +277,9 @@ def snapshot_data(results: list[ProviderResult]):
             "source": result.source,
             "sessions": result.sessions,
             "message_count": len(result.messages),
-            "models": {},
+            "captured_at": datetime.now(timezone.utc).isoformat(),
+            "messages": [_msg_to_dict(msg) for msg in result.messages],
         }
-        for msg in result.messages:
-            m = snapshot[result.name]["models"].setdefault(msg.model, {
-                "messages": 0, "input": 0, "output": 0,
-                "cache_read": 0, "cache_write": 0,
-            })
-            m["messages"] += 1
-            m["input"] += msg.input_tokens
-            m["output"] += msg.output_tokens
-            m["cache_read"] += msg.cache_read_tokens
-            m["cache_write"] += msg.cache_write_tokens
 
     with open(snapshot_file, "w") as f:
         json.dump(snapshot, f, indent=2)
@@ -199,18 +300,29 @@ def main():
     os.makedirs(REPORTS_DIR, exist_ok=True)
 
     print("Loading providers...")
-    results = []
+    fresh_results = []
     for name, load_fn in PROVIDERS:
-        result = cached_load(load_fn, name)
+        result = load_fn()  # Direct load, not cached (cache is for incremental, snapshots handle persistence)
         print(f"  {result.name}: {len(result.messages)} messages, {result.sessions} sessions ({result.source})")
-        results.append(result)
+        fresh_results.append(result)
 
-    all_messages = sum(len(r.messages) for r in results)
+    all_messages = sum(len(r.messages) for r in fresh_results)
     if not all_messages:
         print("No messages found from any provider.")
         sys.exit(1)
 
-    print(f"\nTotal: {all_messages} messages across {len(results)} providers")
+    print("\nMerging with historical snapshots...")
+    results = _merge_results(fresh_results)
+    total_messages = sum(len(r.messages) for r in results)
+    for r in results:
+        print(f"  {r.name}: {len(r.messages)} messages, {r.sessions} sessions ({r.source})")
+
+    print(f"\nTotal: {total_messages} messages across {len(results)} providers (including historical)")
+
+    # Save fresh+merged to cache for next run's incremental loading
+    from cache import save_cache
+    for r in results:
+        save_cache(r.name, r.messages, r.sessions)
 
     snapshot_data(results)
 
