@@ -1,18 +1,16 @@
-.PHONY: help token-report token-serve prompt-analysis clean
+.PHONY: help ai-report ai-serve prompt-analysis clean
 
 help:
 	@printf "AI Tooling - Available targets:\n"
-	@printf "  token-report    - Generate token usage report (all providers)\n"
-	@printf "  token-serve     - Start local server with auto-regeneration\n"
+	@printf "  ai-report       - Generate and open token usage report\n"
+	@printf "  ai-serve        - Start local server with auto-regeneration\n"
 	@printf "  prompt-analysis - Run prompt analysis pipeline\n"
 	@printf "  clean           - Clean all output directories\n"
-	@printf "\n"
-	@printf "  ai-report       - Open token report in browser (run make token-report first)\n"
 
-token-report:
-	$(MAKE) -C tools/token-report report
+ai-report:
+	$(MAKE) -C tools/token-report open
 
-token-serve:
+ai-serve:
 	$(MAKE) -C tools/token-report serve
 
 prompt-analysis:
