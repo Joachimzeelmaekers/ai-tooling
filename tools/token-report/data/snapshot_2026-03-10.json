@@ -2,7 +2,7 @@
   "claude-code": {
     "source": "stats-cache+jsonl",
     "sessions": 106,
-    "message_count": 1493,
+    "message_count": 1551,
     "models": {
       "claude-opus-4-5-20251101": {
         "messages": 16,
@@ -19,11 +19,11 @@
         "cache_write": 10107513
       },
       "claude-opus-4-6": {
-        "messages": 1006,
-        "input": 95535,
-        "output": 227052,
-        "cache_read": 71282391,
-        "cache_write": 6328184
+        "messages": 1064,
+        "input": 95700,
+        "output": 243613,
+        "cache_read": 78572260,
+        "cache_write": 6759136
       },
       "claude-haiku-4-5-20251001": {
         "messages": 456,
@@ -65,6 +65,34 @@
         "input": 1443915,
         "output": 45638,
         "cache_read": 9511808,
+        "cache_write": 0
+      }
+    }
+  },
+  "cursor": {
+    "source": "vscdb",
+    "sessions": 453,
+    "message_count": 1103,
+    "models": {
+      "cursor-edit": {
+        "messages": 878,
+        "input": 61887569,
+        "output": 2401357,
+        "cache_read": 0,
+        "cache_write": 0
+      },
+      "cursor-chat": {
+        "messages": 206,
+        "input": 14564839,
+        "output": 568555,
+        "cache_read": 0,
+        "cache_write": 0
+      },
+      "cursor-plan": {
+        "messages": 19,
+        "input": 633062,
+        "output": 32172,
+        "cache_read": 0,
         "cache_write": 0
       }
     }

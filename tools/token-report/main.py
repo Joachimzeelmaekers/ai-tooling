@@ -12,7 +12,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 from providers.base import ProviderResult
-from providers import opencode, claude
+from providers import opencode, claude, cursor
 from pricing import estimate_cost
 from report import build_html
 
@@ -24,6 +24,7 @@ DATA_DIR = os.path.join(TOOL_DIR, "data")
 PROVIDERS = [
     claude.load,
     opencode.load,
+    cursor.load,
 ]
 
 
