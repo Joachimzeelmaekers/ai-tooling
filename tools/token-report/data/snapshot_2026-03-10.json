@@ -1,0 +1,72 @@
+{
+  "claude-code": {
+    "source": "stats-cache+jsonl",
+    "sessions": 106,
+    "message_count": 1493,
+    "models": {
+      "claude-opus-4-5-20251101": {
+        "messages": 16,
+        "input": 168860,
+        "output": 11761,
+        "cache_read": 193400738,
+        "cache_write": 12696426
+      },
+      "claude-sonnet-4-5-20250929": {
+        "messages": 15,
+        "input": 68419,
+        "output": 37476,
+        "cache_read": 108582749,
+        "cache_write": 10107513
+      },
+      "claude-opus-4-6": {
+        "messages": 1006,
+        "input": 95535,
+        "output": 227052,
+        "cache_read": 71282391,
+        "cache_write": 6328184
+      },
+      "claude-haiku-4-5-20251001": {
+        "messages": 456,
+        "input": 15840,
+        "output": 56396,
+        "cache_read": 18918223,
+        "cache_write": 1426523
+      }
+    }
+  },
+  "opencode": {
+    "source": "sqlite",
+    "sessions": 126,
+    "message_count": 5515,
+    "models": {
+      "gpt-5.2-codex": {
+        "messages": 1981,
+        "input": 7585553,
+        "output": 739328,
+        "cache_read": 134171392,
+        "cache_write": 0
+      },
+      "gpt-5.3-codex": {
+        "messages": 2319,
+        "input": 11686170,
+        "output": 746292,
+        "cache_read": 131663872,
+        "cache_write": 0
+      },
+      "minimax-m2.5-free": {
+        "messages": 1089,
+        "input": 389451,
+        "output": 204654,
+        "cache_read": 42888069,
+        "cache_write": 3254931
+      },
+      "gpt-5.4": {
+        "messages": 126,
+        "input": 1443915,
+        "output": 45638,
+        "cache_read": 9511808,
+        "cache_write": 0
+      }
+    }
+  }
+}

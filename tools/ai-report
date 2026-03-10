@@ -3,7 +3,7 @@
 # Usage: ai-report [serve|open]
 
 AI_TOOLING_DIR="/Users/joachim.zeelmaekers/work/ai-tooling"
-REPORT_DIR="$AI_TOOLING_DIR/tools/opencode-token-report"
+REPORT_DIR="$AI_TOOLING_DIR/tools/token-report"
 
 case "${1:-serve}" in
     serve)
