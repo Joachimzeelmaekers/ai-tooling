@@ -129,6 +129,10 @@ def build_html(data: dict) -> str:
       --text-muted: #a39e90;
       --brand: #d97757;
       --brand-hover: #e09070;
+      --space-sm: 0.75rem;
+      --space-md: 1rem;
+      --space-lg: 1.5rem;
+      --space-xl: 2rem;
     }}
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{
@@ -211,7 +215,7 @@ def build_html(data: dict) -> str:
     }}
 
     .page-header {{
-      margin-bottom: 1.5rem;
+      margin-bottom: var(--space-lg);
     }}
     .page-header h2 {{
       font-size: 1.5rem;
@@ -227,9 +231,9 @@ def build_html(data: dict) -> str:
     .filter-bar {{
       display: flex;
       align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 1.5rem;
-      padding: 0.75rem 1rem;
+      gap: var(--space-sm);
+      margin-bottom: var(--space-lg);
+      padding: var(--space-sm) var(--space-md);
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -258,8 +262,8 @@ def build_html(data: dict) -> str:
     .summary-grid {{
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 0.75rem;
-      margin-bottom: 2rem;
+      gap: var(--space-sm);
+      margin-bottom: var(--space-xl);
     }}
     .card {{
       background: var(--surface);
@@ -277,13 +281,13 @@ def build_html(data: dict) -> str:
       margin-bottom: 0.75rem;
       color: var(--text);
     }}
-    .section {{ margin-bottom: 2.5rem; }}
+    .section {{ margin-bottom: var(--space-xl); }}
 
     .charts-grid-2 {{
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-      margin-bottom: 2rem;
+      gap: var(--space-md);
+      margin-bottom: var(--space-xl);
     }}
     .chart-card {{
       background: var(--surface);
@@ -294,6 +298,7 @@ def build_html(data: dict) -> str:
     .chart-card h3 {{ margin-bottom: 1rem; }}
     .chart-wrapper {{ position: relative; height: 260px; }}
     .chart-card.full .chart-wrapper {{ height: 340px; }}
+    .chart-card.full {{ margin-bottom: var(--space-md); }}
 
     table {{
       width: 100%;
@@ -351,7 +356,7 @@ def build_html(data: dict) -> str:
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 1.25rem;
-      margin-bottom: 2rem;
+      margin-bottom: var(--space-xl);
     }}
     .timeline-header {{
       display: flex;
