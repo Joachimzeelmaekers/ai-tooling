@@ -29,10 +29,10 @@ COLORS = [
 ]
 
 PROVIDER_COLORS = {
-    "claude-code": "#d97706",
-    "opencode": "#6366f1",
-    "cursor": "#22d3ee",
-    "codex": "#ef4444",
+    "claude-code": "#d97757",  # terracotta
+    "opencode": "#6366f1",      # indigo
+    "cursor": "#22d3ee",        # cyan
+    "codex": "#ef4444",         # red
 }
 
 
@@ -121,12 +121,14 @@ def build_html(data: dict) -> str:
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <style>
     :root {{
-      --bg: #0f1117;
-      --surface: #161b22;
-      --border: #21262d;
-      --text: #e6edf3;
-      --muted: #7d8590;
-      --accent: #6366f1;
+      --bg: #141413;
+      --surface: #1c1c1a;
+      --surface-hover: #2a2926;
+      --border: #3d3b36;
+      --text: #eae6dc;
+      --text-muted: #a39e90;
+      --brand: #d97757;
+      --brand-hover: #e09070;
     }}
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{
@@ -134,23 +136,100 @@ def build_html(data: dict) -> str:
       background: var(--bg);
       color: var(--text);
       line-height: 1.6;
+      display: flex;
+      min-height: 100vh;
     }}
-    header {{
-      background: linear-gradient(135deg, #1a1f2e 0%, #161b22 100%);
+
+    /* Sidebar */
+    aside {{
+      width: 220px;
+      background: var(--bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }}
+    .brand {{
+      height: 56px;
+      display: flex;
+      align-items: center;
+      padding: 0 1rem;
       border-bottom: 1px solid var(--border);
-      padding: 2rem 2.5rem;
     }}
-    header h1 {{ font-size: 1.75rem; font-weight: 700; color: var(--text); }}
-    header h1 span {{ color: var(--accent); }}
-    header p {{ color: var(--muted); font-size: 0.875rem; margin-top: 0.25rem; }}
-    .container {{ max-width: 1400px; margin: 0 auto; padding: 2rem 2.5rem; }}
+    .brand h1 {{
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+    }}
+    .brand h1 span {{ color: var(--brand); }}
+
+    nav {{
+      padding: 0.75rem;
+      flex: 1;
+    }}
+    .nav-item {{
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      padding: 0.5rem 0.75rem;
+      border-radius: 8px;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-decoration: none;
+    }}
+    .nav-item:hover {{
+      background: var(--surface-hover);
+      color: var(--text);
+    }}
+    .nav-item.active {{
+      background: var(--surface);
+      color: var(--text);
+    }}
+    .nav-item svg {{
+      width: 1rem;
+      height: 1rem;
+      color: var(--text-muted);
+    }}
+    .nav-item.active svg {{ color: var(--brand); }}
+
+    .sidebar-footer {{
+      padding: 0.75rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }}
+
+    /* Main content */
+    main {{
+      flex: 1;
+      overflow: auto;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 1.5rem 2rem;
+    }}
+
+    .page-header {{
+      margin-bottom: 1.5rem;
+    }}
+    .page-header h2 {{
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+    }}
+    .page-header p {{
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }}
 
     .filter-bar {{
       display: flex;
       align-items: center;
       gap: 0.75rem;
-      margin-bottom: 2rem;
-      padding: 1rem 1.5rem;
+      margin-bottom: 1.5rem;
+      padding: 0.75rem 1rem;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -159,62 +238,61 @@ def build_html(data: dict) -> str:
       font-size: 0.75rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: var(--muted);
+      color: var(--text-muted);
       font-weight: 600;
     }}
     .filter-btn {{
-      padding: 0.4rem 1rem;
+      padding: 0.35rem 0.85rem;
       border-radius: 999px;
       border: 1px solid var(--border);
       background: transparent;
-      color: var(--muted);
-      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-size: 0.75rem;
       font-family: ui-monospace, monospace;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s;
     }}
-    .filter-btn:hover {{ color: var(--text); border-color: var(--muted); }}
-    .filter-btn.active {{ color: #fff; }}
+    .filter-btn:hover {{ color: var(--text); border-color: var(--text-muted); }}
 
     .summary-grid {{
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 1rem;
-      margin-bottom: 2.5rem;
+      gap: 0.75rem;
+      margin-bottom: 2rem;
     }}
     .card {{
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 1.25rem 1.5rem;
+      padding: 1rem 1.25rem;
     }}
-    .card .label {{ font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }}
-    .card .value {{ font-size: 1.75rem; font-weight: 700; margin-top: 0.25rem; }}
-    .card .sub   {{ font-size: 0.8rem; color: var(--muted); margin-top: 0.125rem; }}
+    .card .label {{ font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }}
+    .card .value {{ font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem; }}
+    .card .sub   {{ font-size: 0.75rem; color: var(--text-muted); margin-top: 0.125rem; }}
 
-    h2 {{
-      font-size: 1.125rem;
+    h3 {{
+      font-size: 1rem;
       font-weight: 600;
-      margin-bottom: 1rem;
+      margin-bottom: 0.75rem;
       color: var(--text);
     }}
-    .section {{ margin-bottom: 3rem; }}
+    .section {{ margin-bottom: 2.5rem; }}
 
     .charts-grid-3 {{
       display: grid;
       grid-template-columns: 2fr 1fr 1fr;
-      gap: 1.5rem;
-      margin-bottom: 2.5rem;
+      gap: 1rem;
+      margin-bottom: 2rem;
     }}
     .chart-card {{
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 1.5rem;
+      padding: 1.25rem;
     }}
-    .chart-card h2 {{ margin-bottom: 1rem; }}
-    .chart-wrapper {{ position: relative; height: 280px; }}
+    .chart-card h3 {{ margin-bottom: 1rem; }}
+    .chart-wrapper {{ position: relative; height: 260px; }}
 
     table {{
       width: 100%;
@@ -222,20 +300,20 @@ def build_html(data: dict) -> str:
       font-size: 0.875rem;
     }}
     thead th {{
-      background: #0d1117;
+      background: var(--bg);
       padding: 0.75rem 1rem;
       text-align: left;
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.04em;
-      color: var(--muted);
+      color: var(--text-muted);
       border-bottom: 1px solid var(--border);
     }}
     thead th.right {{ text-align: right; }}
     tbody tr {{ border-bottom: 1px solid var(--border); transition: background 0.1s; }}
     tbody tr:last-child {{ border-bottom: none; }}
-    tbody tr:hover {{ background: #1c2128; }}
+    tbody tr:hover {{ background: var(--surface-hover); }}
     tbody td {{ padding: 0.75rem 1rem; }}
     .table-card {{
       background: var(--surface);
@@ -243,24 +321,24 @@ def build_html(data: dict) -> str:
       border-radius: 12px;
       overflow: hidden;
     }}
-    .table-card h2 {{ padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); margin: 0; }}
+    .table-card h3 {{ padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); margin: 0; }}
 
     .mono  {{ font-family: ui-monospace, "SF Mono", monospace; }}
     .right {{ text-align: right; }}
-    .cost  {{ color: #22d3ee; }}
-    .path  {{ max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; color: var(--muted); }}
+    .cost  {{ color: var(--brand); }}
+    .path  {{ max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; color: var(--text-muted); }}
 
     .model-badge {{
       display: inline-block;
       padding: 0.2em 0.65em;
       border-radius: 999px;
       border: 1px solid;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       font-weight: 500;
       font-family: ui-monospace, monospace;
     }}
     .provider-badge {{
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       font-weight: 600;
       font-family: ui-monospace, monospace;
       text-transform: uppercase;
@@ -271,8 +349,8 @@ def build_html(data: dict) -> str:
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 1.5rem;
-      margin-bottom: 2.5rem;
+      padding: 1.25rem;
+      margin-bottom: 2rem;
     }}
     .timeline-header {{
       display: flex;
@@ -282,7 +360,7 @@ def build_html(data: dict) -> str:
       gap: 0.75rem;
       margin-bottom: 1rem;
     }}
-    .timeline-header h2 {{ margin: 0; }}
+    .timeline-header h3 {{ margin: 0; }}
     .timeline-controls {{
       display: flex;
       gap: 0.5rem;
@@ -296,25 +374,48 @@ def build_html(data: dict) -> str:
     }}
     .btn {{
       background: transparent;
-      color: var(--muted);
+      color: var(--text-muted);
       border: none;
-      padding: 0.35rem 0.75rem;
-      font-size: 0.75rem;
+      padding: 0.3rem 0.65rem;
+      font-size: 0.7rem;
       font-family: inherit;
       cursor: pointer;
       transition: all 0.15s;
     }}
     .btn:not(:last-child) {{ border-right: 1px solid var(--border); }}
-    .btn:hover {{ color: var(--text); background: #1c2128; }}
-    .btn.active {{ background: var(--accent); color: #fff; }}
-    .timeline-wrapper {{ position: relative; height: 300px; }}
+    .btn:hover {{ color: var(--text); background: var(--surface-hover); }}
+    .btn.active {{ background: var(--brand); color: #fff; }}
+    .timeline-wrapper {{ position: relative; height: 500px; }}
 
     footer {{
       text-align: center;
-      padding: 2rem;
-      color: var(--muted);
-      font-size: 0.8rem;
+      padding: 1.5rem;
+      color: var(--text-muted);
+      font-size: 0.75rem;
       border-top: 1px solid var(--border);
+      margin-top: auto;
+    }}
+
+    .tab-bar {{
+      display: flex;
+      gap: 0.25rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }}
+    .tab-btn {{
+      padding: 0.75rem 1rem;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }}
+    .tab-btn:hover {{ color: var(--text); }}
+    .tab-btn.active {{
+      color: var(--text);
+      border-bottom-color: var(--brand);
     }}
 
     .sortable thead th {{
@@ -330,122 +431,173 @@ def build_html(data: dict) -> str:
       right: 0.5rem;
       top: 50%;
       transform: translateY(-50%);
-      font-size: 0.65rem;
-      color: var(--muted);
+      font-size: 0.6rem;
+      color: var(--text-muted);
     }}
-    .sortable thead th.sort-asc::after {{ content: "\\25B2"; color: var(--accent); }}
-    .sortable thead th.sort-desc::after {{ content: "\\25BC"; color: var(--accent); }}
+    .sortable thead th.sort-asc::after {{ content: "\\25B2"; color: var(--brand); }}
+    .sortable thead th.sort-desc::after {{ content: "\\25BC"; color: var(--brand); }}
 
     @media (max-width: 900px) {{
       .charts-grid-3 {{ grid-template-columns: 1fr; }}
       .summary-grid {{ grid-template-columns: repeat(2, 1fr); }}
+      aside {{ display: none; }}
     }}
+
+    /* Page sections */
+    .page {{ display: none; }}
+    .page.active {{ display: block; }}
   </style>
 </head>
 <body>
 
-<header>
-  <h1><span>AI</span> Token Report</h1>
-  <p>Generated {generated_at}</p>
-</header>
+<aside>
+  <div class="brand">
+    <h1><span>AI</span> Dashboard</h1>
+  </div>
+  <nav>
+    <a class="nav-item active" data-page="overview">
+      <svg viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="3" width="14" height="3" rx="1"/><rect x="1" y="8" width="14" height="3" rx="1"/><rect x="1" y="13" width="14" height="3" rx="1"/></svg>
+      Overview
+    </a>
+    <a class="nav-item" data-page="timeline">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 12l3-3 3 3 5-5v3H2v-1z"/><circle cx="13.5" cy="4.5" r="2"/></svg>
+      Timeline
+    </a>
+    <a class="nav-item" data-page="models">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zM6 5l6 3-6 3V5z"/></svg>
+      Models
+    </a>
+    <a class="nav-item" data-page="projects">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h4l1 1h7v10H2V3zm0 5h12"/></svg>
+      Projects
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <p>Generated {generated_at}</p>
+  </div>
+</aside>
 
-<div class="container">
-
+<main>
   <!-- Provider filter -->
   <div class="filter-bar">
     <span class="filter-label">Filter</span>
     <button class="filter-btn active" data-provider="all">All</button>
   </div>
 
-  <!-- Summary cards -->
-  <div class="summary-grid" id="summaryCards"></div>
+  <!-- Overview Page -->
+  <div class="page active" id="page-overview">
+    <div class="page-header">
+      <h2>Overview</h2>
+      <p>Token usage analytics across all providers</p>
+    </div>
 
-  <!-- Charts -->
-  <div class="charts-grid-3">
-    <div class="chart-card">
-      <h2>Tokens by Model</h2>
-      <div class="chart-wrapper"><canvas id="barChart"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <h2>Output Token Share</h2>
-      <div class="chart-wrapper"><canvas id="donutChart"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <h2>Tokens by Provider</h2>
-      <div class="chart-wrapper"><canvas id="provDonutChart"></canvas></div>
-    </div>
-  </div>
+    <!-- Summary cards -->
+    <div class="summary-grid" id="summaryCards"></div>
 
-  <!-- Timeline -->
-  <div class="timeline-card">
-    <div class="timeline-header">
-      <h2>Token Usage Over Time</h2>
-      <div class="timeline-controls">
-        <div class="btn-group" id="chartTypeGroup">
-          <button class="btn active" data-value="line">Line</button>
-          <button class="btn" data-value="bar">Bar</button>
-        </div>
-        <div class="btn-group" id="tokenTypeGroup">
-          <button class="btn" data-value="input">Input</button>
-          <button class="btn" data-value="output">Output</button>
-          <button class="btn active" data-value="total">Total</button>
-        </div>
-        <div class="btn-group" id="groupByGroup">
-          <button class="btn" data-value="hour">Hour</button>
-          <button class="btn active" data-value="day">Day</button>
-          <button class="btn" data-value="week">Week</button>
-          <button class="btn" data-value="month">Month</button>
-        </div>
+    <!-- Charts -->
+    <div class="charts-grid-3">
+      <div class="chart-card">
+        <h3>Tokens by Model</h3>
+        <div class="chart-wrapper"><canvas id="barChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Output Token Share</h3>
+        <div class="chart-wrapper"><canvas id="donutChart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Tokens by Provider</h3>
+        <div class="chart-wrapper"><canvas id="provDonutChart"></canvas></div>
       </div>
     </div>
-    <div class="timeline-wrapper"><canvas id="lineChart"></canvas></div>
   </div>
 
-  <!-- Model table -->
-  <div class="section">
-    <div class="table-card">
-      <h2>Token Usage by Model</h2>
-      <table class="sortable" id="modelTable">
-        <thead>
-          <tr>
-            <th data-type="string">Model</th>
-            <th data-type="string">Source</th>
-            <th class="right" data-type="number">Messages</th>
-            <th class="right" data-type="number">Input</th>
-            <th class="right" data-type="number">Output</th>
-            <th class="right" data-type="number">Reasoning</th>
-            <th class="right" data-type="number">Cache Read</th>
-            <th class="right" data-type="number">Total</th>
-            <th class="right" data-type="number">Est. Cost</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+  <!-- Timeline Page -->
+  <div class="page" id="page-timeline">
+    <div class="page-header">
+      <h2>Timeline</h2>
+      <p>Token usage over time</p>
+    </div>
+    <div class="timeline-card">
+      <div class="timeline-header">
+        <h3>Token Usage Over Time</h3>
+        <div class="timeline-controls">
+          <div class="btn-group" id="chartTypeGroup">
+            <button class="btn active" data-value="line">Line</button>
+            <button class="btn" data-value="bar">Bar</button>
+          </div>
+          <div class="btn-group" id="tokenTypeGroup">
+            <button class="btn" data-value="input">Input</button>
+            <button class="btn" data-value="output">Output</button>
+            <button class="btn active" data-value="total">Total</button>
+          </div>
+          <div class="btn-group" id="groupByGroup">
+            <button class="btn" data-value="hour">Hour</button>
+            <button class="btn active" data-value="day">Day</button>
+            <button class="btn" data-value="week">Week</button>
+            <button class="btn" data-value="month">Month</button>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-wrapper"><canvas id="lineChart"></canvas></div>
     </div>
   </div>
 
-  <!-- Project table -->
-  <div class="section">
-    <div class="table-card">
-      <h2>Projects by Token Usage</h2>
-      <table class="sortable" id="projectTable">
-        <thead>
-          <tr>
-            <th data-type="string">Project</th>
-            <th class="right" data-type="number">Messages</th>
-            <th class="right" data-type="number">Input</th>
-            <th class="right" data-type="number">Output</th>
-            <th class="right" data-type="number">Total</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
+  <!-- Models Page -->
+  <div class="page" id="page-models">
+    <div class="page-header">
+      <h2>Models</h2>
+      <p>Token usage by model</p>
+    </div>
+    <div class="section">
+      <div class="table-card">
+        <h3>Token Usage by Model</h3>
+        <table class="sortable" id="modelTable">
+          <thead>
+            <tr>
+              <th data-type="string">Model</th>
+              <th data-type="string">Source</th>
+              <th class="right" data-type="number">Messages</th>
+              <th class="right" data-type="number">Input</th>
+              <th class="right" data-type="number">Output</th>
+              <th class="right" data-type="number">Reasoning</th>
+              <th class="right" data-type="number">Cache Read</th>
+              <th class="right" data-type="number">Total</th>
+              <th class="right" data-type="number">Est. Cost</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
-</div>
+  <!-- Projects Page -->
+  <div class="page" id="page-projects">
+    <div class="page-header">
+      <h2>Projects</h2>
+      <p>Token usage by project</p>
+    </div>
+    <div class="section">
+      <div class="table-card">
+        <h3>Projects by Token Usage</h3>
+        <table class="sortable" id="projectTable">
+          <thead>
+            <tr>
+              <th data-type="string">Project</th>
+              <th class="right" data-type="number">Messages</th>
+              <th class="right" data-type="number">Input</th>
+              <th class="right" data-type="number">Output</th>
+              <th class="right" data-type="number">Total</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
 
-<footer>AI Token Usage Report &mdash; By Joachim Zeelmaekers</footer>
+<footer>AI Token Usage Report</footer>
 
 <script>
 // =========================================================================
@@ -473,7 +625,7 @@ let tlState = {{ chartType: "line", tokenType: "total", groupBy: "day" }};
 const chartDefaults = {{
   responsive: true,
   maintainAspectRatio: false,
-  plugins: {{ legend: {{ labels: {{ color: "#e6edf3", font: {{ size: 12 }} }} }} }},
+  plugins: {{ legend: {{ labels: {{ color: "#eae6dc", font: {{ size: 12 }} }} }} }},
 }};
 const fmtAxis = v => v >= 1e6 ? (v/1e6).toFixed(1)+"M" : v >= 1e3 ? (v/1e3).toFixed(0)+"K" : v;
 const fmtNum = n => n.toLocaleString();
@@ -488,6 +640,22 @@ const fmtCost = c => "$" + c.toFixed(2);
 function getModels() {{
   if (activeProvider === "all") return ALL_MODELS;
   return ALL_MODELS.filter(m => m.provider === activeProvider);
+}}
+
+// =========================================================================
+// Navigation
+// =========================================================================
+function initNav() {{
+  document.querySelectorAll('.nav-item').forEach(item => {{
+    item.addEventListener('click', e => {{
+      e.preventDefault();
+      const page = item.dataset.page;
+      document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById('page-' + page).classList.add('active');
+    }});
+  }});
 }}
 
 // =========================================================================
@@ -518,7 +686,7 @@ function initFilterBar() {{
 function updateFilterStyles() {{
   document.querySelectorAll(".filter-btn").forEach(btn => {{
     const p = btn.dataset.provider;
-    const color = p === "all" ? "#6366f1" : (PROVIDER_COLORS[p] || "#7d8590");
+    const color = p === "all" ? "#d97757" : (PROVIDER_COLORS[p] || "#a39e90");
     if (btn.classList.contains("active")) {{
       btn.style.background = color;
       btn.style.borderColor = color;
@@ -587,8 +755,8 @@ function renderBarChart() {{
     options: {{
       ...chartDefaults,
       scales: {{
-        x: {{ ticks: {{ color: "#7d8590", maxRotation: 45, minRotation: 25 }}, grid: {{ color: "#21262d" }} }},
-        y: {{ ticks: {{ color: "#7d8590", callback: fmtAxis }}, grid: {{ color: "#21262d" }} }},
+        x: {{ ticks: {{ color: "#a39e90", maxRotation: 45, minRotation: 25 }}, grid: {{ color: "#3d3b36" }} }},
+        y: {{ ticks: {{ color: "#a39e90", callback: fmtAxis }}, grid: {{ color: "#3d3b36" }} }},
       }},
     }}
   }});
@@ -679,6 +847,9 @@ function fmtTimeLabel(raw, groupBy) {{
   return raw;
 }}
 
+const CHART_GRID_COLOR = "#3d3b36";
+const CHART_TEXT_COLOR = "#a39e90";
+
 function renderTimeline() {{
   const {{ chartType, tokenType, groupBy }} = tlState;
   const grouped = groupData(RAW_TIMELINE, groupBy);
@@ -712,19 +883,26 @@ function renderTimeline() {{
       interaction: {{ mode: "index", intersect: false }},
       scales: {{
         x: {{
-          title: {{ display: true, text: groupBy.charAt(0).toUpperCase() + groupBy.slice(1), color: "#7d8590" }},
-          ticks: {{ color: "#7d8590", maxTicksLimit: 24, maxRotation: 45, minRotation: 25 }},
-          grid: {{ color: "#21262d" }},
+          title: {{ display: true, text: groupBy.charAt(0).toUpperCase() + groupBy.slice(1), color: CHART_TEXT_COLOR }},
+          ticks: {{ color: CHART_TEXT_COLOR, maxTicksLimit: 24, maxRotation: 45, minRotation: 25 }},
+          grid: {{ color: CHART_GRID_COLOR }},
           stacked: chartType === "bar",
         }},
         y: {{
-          title: {{ display: true, text: tokenType.charAt(0).toUpperCase() + tokenType.slice(1) + " Tokens", color: "#7d8590" }},
-          ticks: {{ color: "#7d8590", callback: fmtAxis }},
-          grid: {{ color: "#21262d" }},
+          title: {{ display: true, text: tokenType.charAt(0).toUpperCase() + tokenType.slice(1) + " Tokens", color: CHART_TEXT_COLOR }},
+          ticks: {{ color: CHART_TEXT_COLOR, callback: fmtAxis }},
+          grid: {{ color: CHART_GRID_COLOR }},
           stacked: chartType === "bar",
         }},
       }},
-      plugins: {{ ...chartDefaults.plugins, tooltip: {{ callbacks: {{ label: ctx => ctx.dataset.label + ": " + ctx.parsed.y.toLocaleString() + " tokens" }} }} }},
+      plugins: {{
+        ...chartDefaults.plugins,
+        tooltip: {{
+          callbacks: {{
+            label: ctx => ctx.dataset.label + ": " + ctx.parsed.y.toLocaleString() + " tokens"
+          }}
+        }}
+      }},
     }},
   }});
 }}
@@ -819,6 +997,7 @@ function renderAll() {{
 // =========================================================================
 // Init
 // =========================================================================
+initNav();
 initFilterBar();
 initSortable();
 
