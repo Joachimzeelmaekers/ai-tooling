@@ -934,7 +934,8 @@ function renderTimeline() {{
       borderColor: m.color,
       backgroundColor: chartType === "bar" ? m.color + "bb" : m.color + "20",
       tension: 0.3, fill: false,
-      pointRadius: chartType === "line" ? 3 : 0,
+      pointRadius: 0,
+      pointHoverRadius: 3,
       borderWidth: chartType === "line" ? 2 : 0,
       borderRadius: chartType === "bar" ? 4 : 0,
     }};
