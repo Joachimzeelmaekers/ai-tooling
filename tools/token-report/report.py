@@ -40,6 +40,7 @@ def build_html(data: dict) -> str:
     model_stats = data["model_stats"]
     hourly_data = data["hourly"]
     project_stats = data["project_stats"]
+    session_stats = data.get("session_stats", [])
     provider_totals = data.get("provider_totals", {})
     total_msgs = data["total_messages"]
     total_sess = data["total_sessions"]
@@ -111,6 +112,7 @@ def build_html(data: dict) -> str:
             }
         }
     projects_js = json.dumps(projects_js_data)
+    sessions_js = json.dumps(session_stats)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -217,6 +219,13 @@ def build_html(data: dict) -> str:
     .page-header {{
       margin-bottom: var(--space-lg);
     }}
+    .page-header-row {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-sm);
+      flex-wrap: wrap;
+    }}
     .page-header h2 {{
       font-size: 1.5rem;
       font-weight: 700;
@@ -258,6 +267,30 @@ def build_html(data: dict) -> str:
       transition: all 0.15s;
     }}
     .filter-btn:hover {{ color: var(--text); border-color: var(--text-muted); }}
+    .action-btn {{
+      margin-left: auto;
+      padding: 0.35rem 0.85rem;
+      border-radius: 999px;
+      border: 1px solid var(--brand);
+      background: transparent;
+      color: var(--brand);
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }}
+    .action-btn:hover {{ background: var(--brand); color: #fff; }}
+
+    .insights-card {{
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.9rem 1.1rem;
+      margin-bottom: var(--space-lg);
+    }}
+    .insights-card h3 {{ margin-bottom: 0.5rem; }}
+    .insights-card ul {{ margin: 0; padding-left: 1.1rem; }}
+    .insights-card li {{ color: var(--text-muted); font-size: 0.85rem; margin: 0.2rem 0; }}
 
     .summary-grid {{
       display: grid;
@@ -484,6 +517,10 @@ def build_html(data: dict) -> str:
       <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 12l3-3 3 3 5-5v3H2v-1z"/><circle cx="13.5" cy="4.5" r="2"/></svg>
       Timeline
     </a>
+    <a class="nav-item" data-page="sessions">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a3 3 0 110 6 3 3 0 010-6zm-5 12a5 5 0 0110 0v2H3v-2z"/></svg>
+      Sessions
+    </a>
     <a class="nav-item" data-page="models">
       <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zM6 5l6 3-6 3V5z"/></svg>
       Models
@@ -508,8 +545,16 @@ def build_html(data: dict) -> str:
   <!-- Overview Page -->
   <div class="page active" id="page-overview">
     <div class="page-header">
-      <h2>Overview</h2>
+      <div class="page-header-row">
+        <h2>Overview</h2>
+        <button id="analyzeBtn" class="action-btn">Analyze</button>
+      </div>
       <p>Token usage analytics across all providers</p>
+    </div>
+
+    <div id="insightsCard" class="insights-card" hidden>
+      <h3>Insights</h3>
+      <ul id="insightsList"></ul>
     </div>
 
     <!-- Summary cards -->
@@ -528,6 +573,36 @@ def build_html(data: dict) -> str:
       <div class="chart-card">
         <h3>Tokens by Provider</h3>
         <div class="chart-wrapper"><canvas id="provDonutChart"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sessions Page -->
+  <div class="page" id="page-sessions">
+    <div class="page-header">
+      <h2>Sessions</h2>
+      <p>Session-level usage by tool/provider</p>
+    </div>
+    <div class="section">
+      <div class="table-card">
+        <h3>Sessions by Token Usage</h3>
+        <table class="sortable" id="sessionTable">
+          <thead>
+            <tr>
+              <th data-type="string">Session</th>
+              <th data-type="string">Source</th>
+              <th data-type="string">Project</th>
+              <th class="right" data-type="number">Models</th>
+              <th class="right" data-type="number">Messages</th>
+              <th class="right" data-type="number">Input</th>
+              <th class="right" data-type="number">Output</th>
+              <th class="right" data-type="number">Total</th>
+              <th class="right" data-type="number">Est. Cost</th>
+              <th data-type="string">Last Active</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -637,6 +712,7 @@ const PROVIDERS = {providers_js};
 const RAW_TIMELINE = {timeline_raw};
 const TIMELINE_MODELS = {timeline_models};
 const PROJECTS = {projects_js};
+const SESSIONS = {sessions_js};
 const PROVIDER_COLORS = {json.dumps(PROVIDER_COLORS)};
 const CURRENT_MONTH = "{current_month}";
 const TOTAL_SESSIONS = {total_sess};
@@ -1034,6 +1110,91 @@ function renderProjectTable() {{
   </tr>`).join("");
 }}
 
+function fmtDateTime(ms) {{
+  if (!ms) return "-";
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString("en", {{
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }});
+}}
+
+function renderSessionTable() {{
+  const tbody = document.querySelector("#sessionTable tbody");
+  const rows = SESSIONS
+    .filter(s => activeProvider === "all" || s.provider === activeProvider)
+    .slice()
+    .sort((a, b) => (b.total || 0) - (a.total || 0));
+
+  tbody.innerHTML = rows.map(s => `<tr>
+    <td class="mono" data-sort="${{s.session_id}}">${{s.session_id}}</td>
+    <td data-sort="${{s.provider}}"><span class="provider-badge" style="color:${{PROVIDER_COLORS[s.provider] || '#a39e90'}}">${{s.provider}}</span></td>
+    <td class="mono path" title="${{s.project}}" data-sort="${{s.project}}">${{s.project}}</td>
+    <td class="mono right" data-sort="${{s.model_count}}">${{fmtNum(s.model_count || 0)}}</td>
+    <td class="mono right" data-sort="${{s.messages}}">${{fmtNum(s.messages || 0)}}</td>
+    <td class="mono right" data-sort="${{s.input}}">${{fmtNum(s.input || 0)}}</td>
+    <td class="mono right" data-sort="${{s.output}}">${{fmtNum(s.output || 0)}}</td>
+    <td class="mono right" data-sort="${{s.total}}">${{fmtNum(s.total || 0)}}</td>
+    <td class="mono right cost" data-sort="${{(s.cost_estimated || 0).toFixed(6)}}">${{fmtCost(s.cost_estimated || 0)}}</td>
+    <td class="mono" data-sort="${{s.end_ms || 0}}">${{fmtDateTime(s.end_ms)}}</td>
+  </tr>`).join("");
+}}
+
+function buildInsights() {{
+  const models = getModels();
+  if (!models.length) return ["No data available for the selected filter."];
+
+  const totalInput = models.reduce((s, m) => s + m.input, 0);
+  const totalOutput = models.reduce((s, m) => s + m.output, 0);
+  const totalTokens = totalInput + totalOutput;
+  const totalCost = models.reduce((s, m) => s + m.cost_estimated, 0);
+  const totalMessages = models.reduce((s, m) => s + m.messages, 0);
+
+  const topModel = models.slice().sort((a, b) => (b.input + b.output) - (a.input + a.output))[0];
+  const topSessions = SESSIONS
+    .filter(s => activeProvider === "all" || s.provider === activeProvider)
+    .slice()
+    .sort((a, b) => (b.total || 0) - (a.total || 0))
+    .slice(0, 3);
+
+  const insights = [
+    `Processed ${{fmtNum(totalMessages)}} messages and ${{fmtNum(totalTokens)}} tokens (in: ${{fmtNum(totalInput)}}, out: ${{fmtNum(totalOutput)}}).`,
+    `Estimated spend is ${{fmtCost(totalCost)}} for the current filter.`,
+    `Top model is ${{topModel.key}} with ${{fmtNum(topModel.input + topModel.output)}} tokens.`,
+  ];
+
+  if (topSessions.length) {{
+    const sessionSummary = topSessions.map(s => `${{s.provider}}:${{s.session_id}} (${{fmtCompact(s.total || 0)}})`).join(", ");
+    insights.push(`Most expensive sessions by tokens: ${{sessionSummary}}.`);
+  }}
+
+  if (activeProvider === "all") {{
+    const providerLead = PROVIDERS.slice().sort((a, b) => (b.input + b.output) - (a.input + a.output))[0];
+    if (providerLead) {{
+      insights.push(`Highest token source is ${{providerLead.name}} with ${{fmtCompact((providerLead.input || 0) + (providerLead.output || 0))}} tokens.`);
+    }}
+  }}
+
+  return insights;
+}}
+
+function initAnalyzeButton() {{
+  const btn = document.getElementById("analyzeBtn");
+  const card = document.getElementById("insightsCard");
+  const list = document.getElementById("insightsList");
+  if (!btn || !card || !list) return;
+
+  btn.addEventListener("click", () => {{
+    const insights = buildInsights();
+    list.innerHTML = insights.map(i => `<li>${{i}}</li>`).join("");
+    card.hidden = !card.hidden;
+  }});
+}}
+
 // =========================================================================
 // Sortable tables
 // =========================================================================
@@ -1072,6 +1233,7 @@ function renderAll() {{
   renderDonutChart();
   renderProvDonutChart();
   renderTimeline();
+  renderSessionTable();
   renderModelTable();
   renderProjectTable();
 }}
@@ -1083,6 +1245,7 @@ initNav();
 initFilterBar();
 initSortable();
 initLookbackSelect();
+initAnalyzeButton();
 
 function setupGroup(id, stateKey) {{
   document.getElementById(id).addEventListener("click", e => {{

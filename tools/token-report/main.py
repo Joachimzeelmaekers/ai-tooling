@@ -53,6 +53,14 @@ def aggregate(results: list[ProviderResult]) -> dict:
         "messages": 0, "input": 0, "output": 0,
     }))
 
+    session_stats = {}
+    session_model_totals = defaultdict(lambda: defaultdict(lambda: {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0,
+    }))
+
     total_messages = 0
     total_sessions = 0
 
@@ -115,6 +123,47 @@ def aggregate(results: list[ProviderResult]) -> dict:
             project_stats[project][model_key]["input"] += msg.input_tokens
             project_stats[project][model_key]["output"] += msg.output_tokens
 
+            # Session bucket
+            sid = msg.session_id or "(unknown)"
+            skey = f"{msg.provider}:{sid}"
+            if skey not in session_stats:
+                session_stats[skey] = {
+                    "provider": msg.provider,
+                    "session_id": sid,
+                    "project": "unknown",
+                    "messages": 0,
+                    "input": 0,
+                    "output": 0,
+                    "reasoning": 0,
+                    "cache_read": 0,
+                    "cache_write": 0,
+                    "start_ms": 0,
+                    "end_ms": 0,
+                    "models": set(),
+                }
+            ss = session_stats[skey]
+            if project and (not ss["project"] or ss["project"] == "unknown"):
+                ss["project"] = project
+            ss["messages"] += 1
+            ss["input"] += msg.input_tokens
+            ss["output"] += msg.output_tokens
+            ss["reasoning"] += msg.reasoning_tokens
+            ss["cache_read"] += msg.cache_read_tokens
+            ss["cache_write"] += msg.cache_write_tokens
+            ss["models"].add(model_key)
+
+            sm = session_model_totals[skey][model_key]
+            sm["input"] += msg.input_tokens
+            sm["output"] += msg.output_tokens
+            sm["cache_read"] += msg.cache_read_tokens
+            sm["cache_write"] += msg.cache_write_tokens
+
+            if msg.timestamp_ms:
+                if ss["start_ms"] == 0 or msg.timestamp_ms < ss["start_ms"]:
+                    ss["start_ms"] = msg.timestamp_ms
+                if msg.timestamp_ms > ss["end_ms"]:
+                    ss["end_ms"] = msg.timestamp_ms
+
             total_messages += 1
 
             # Provider totals
@@ -142,11 +191,43 @@ def aggregate(results: list[ProviderResult]) -> dict:
             if ms["provider"] == pname
         )
 
+    session_stats_list = []
+    for ss in session_stats.values():
+        skey = f"{ss['provider']}:{ss['session_id']}"
+        session_cost = 0.0
+        for model_key, mt in session_model_totals[skey].items():
+            session_cost += estimate_cost(
+                model_key,
+                mt["input"],
+                mt["output"],
+                mt["cache_read"],
+                mt["cache_write"],
+            )
+        session_stats_list.append({
+            "provider": ss["provider"],
+            "session_id": ss["session_id"],
+            "project": ss["project"] or "unknown",
+            "messages": ss["messages"],
+            "input": ss["input"],
+            "output": ss["output"],
+            "reasoning": ss["reasoning"],
+            "cache_read": ss["cache_read"],
+            "cache_write": ss["cache_write"],
+            "total": ss["input"] + ss["output"],
+            "cost_estimated": session_cost,
+            "start_ms": ss["start_ms"],
+            "end_ms": ss["end_ms"],
+            "model_count": len(ss["models"]),
+        })
+
+    session_stats_list.sort(key=lambda x: (x["end_ms"], x["start_ms"]), reverse=True)
+
     return {
         "model_stats": dict(model_stats),
         "hourly": {k: dict(v) for k, v in hourly.items()},
         "project_stats": {k: dict(v) for k, v in project_stats.items()},
         "provider_totals": dict(provider_totals),
+        "session_stats": session_stats_list,
         "total_messages": total_messages,
         "total_sessions": total_sessions,
         "month_cost_estimated": month_cost_estimated,
