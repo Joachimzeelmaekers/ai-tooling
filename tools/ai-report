@@ -2,7 +2,13 @@
 # ai-report: Open token usage report in browser with auto-regeneration
 # Usage: ai-report [serve|open]
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SOURCE="$0"
+while [ -L "$SOURCE" ]; do
+    DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 AI_TOOLING_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPORT_DIR="$AI_TOOLING_DIR/tools/token-report"
 
