@@ -279,9 +279,9 @@ def build_html(data: dict) -> str:
     }}
     .section {{ margin-bottom: 2.5rem; }}
 
-    .charts-grid-3 {{
+    .charts-grid-2 {{
       display: grid;
-      grid-template-columns: 2fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 1rem;
       margin-bottom: 2rem;
     }}
@@ -293,6 +293,7 @@ def build_html(data: dict) -> str:
     }}
     .chart-card h3 {{ margin-bottom: 1rem; }}
     .chart-wrapper {{ position: relative; height: 260px; }}
+    .chart-card.full .chart-wrapper {{ height: 340px; }}
 
     table {{
       width: 100%;
@@ -366,6 +367,21 @@ def build_html(data: dict) -> str:
       gap: 0.5rem;
       flex-wrap: wrap;
     }}
+    .timeline-select {{
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.3rem 0.55rem;
+      font-size: 0.75rem;
+      font-family: inherit;
+      min-width: 7rem;
+      cursor: pointer;
+    }}
+    .timeline-select:focus {{
+      outline: none;
+      border-color: var(--brand);
+    }}
     .btn-group {{
       display: flex;
       border: 1px solid var(--border);
@@ -438,7 +454,7 @@ def build_html(data: dict) -> str:
     .sortable thead th.sort-desc::after {{ content: "\\25BC"; color: var(--brand); }}
 
     @media (max-width: 900px) {{
-      .charts-grid-3 {{ grid-template-columns: 1fr; }}
+      .charts-grid-2 {{ grid-template-columns: 1fr; }}
       .summary-grid {{ grid-template-columns: repeat(2, 1fr); }}
       aside {{ display: none; }}
     }}
@@ -495,11 +511,11 @@ def build_html(data: dict) -> str:
     <div class="summary-grid" id="summaryCards"></div>
 
     <!-- Charts -->
-    <div class="charts-grid-3">
-      <div class="chart-card">
-        <h3>Tokens by Model</h3>
-        <div class="chart-wrapper"><canvas id="barChart"></canvas></div>
-      </div>
+    <div class="chart-card full">
+      <h3>Tokens by Model</h3>
+      <div class="chart-wrapper"><canvas id="barChart"></canvas></div>
+    </div>
+    <div class="charts-grid-2">
       <div class="chart-card">
         <h3>Output Token Share</h3>
         <div class="chart-wrapper"><canvas id="donutChart"></canvas></div>
@@ -536,6 +552,14 @@ def build_html(data: dict) -> str:
             <button class="btn" data-value="week">Week</button>
             <button class="btn" data-value="month">Month</button>
           </div>
+          <select id="lookbackSelect" class="timeline-select" aria-label="Timeline range">
+            <option value="1m">Last 1 month</option>
+            <option value="3m" selected>Last 3 months</option>
+            <option value="6m">Last 6 months</option>
+            <option value="1y">Last 1 year</option>
+            <option value="2y">Last 2 years</option>
+            <option value="all">All time</option>
+          </select>
         </div>
       </div>
       <div class="timeline-wrapper"><canvas id="lineChart"></canvas></div>
@@ -620,7 +644,7 @@ ALL_MODELS.forEach(m => MODEL_PROVIDER[m.key] = m.provider);
 // State
 // =========================================================================
 let activeProvider = "all"; // "all" or a provider name
-let tlState = {{ chartType: "line", tokenType: "total", groupBy: "day" }};
+let tlState = {{ chartType: "line", tokenType: "total", groupBy: "day", lookback: "3m" }};
 
 const chartDefaults = {{
   responsive: true,
@@ -800,6 +824,12 @@ function getWeekKey(d) {{
   return dt.getUTCFullYear() + "-W" + String(week).padStart(2, "0");
 }}
 
+function parseWeekKey(weekKey) {{
+  const [year, weekNum] = weekKey.split("-W").map(Number);
+  const jan1 = new Date(Date.UTC(year, 0, 1));
+  return new Date(Date.UTC(year, 0, 1 + (weekNum - 1) * 7 - jan1.getUTCDay() + 1));
+}}
+
 function groupData(raw, groupBy) {{
   const buckets = {{}};
   for (const [hourKey, models] of Object.entries(raw)) {{
@@ -828,8 +858,7 @@ function fillGaps(keys, groupBy) {{
     const d = new Date(first + "T00:00:00Z"), end = new Date(last + "T00:00:00Z");
     while (d <= end) {{ filled.push(d.toISOString().slice(0, 10)); d.setUTCDate(d.getUTCDate() + 1); }}
   }} else if (groupBy === "week") {{
-    const parseWeek = w => {{ const [y, wn] = w.split("-W").map(Number); const jan1 = new Date(Date.UTC(y, 0, 1)); return new Date(Date.UTC(y, 0, 1 + (wn - 1) * 7 - jan1.getUTCDay() + 1)); }};
-    const d = parseWeek(first), end = parseWeek(last);
+    const d = parseWeekKey(first), end = parseWeekKey(last);
     while (d <= end) {{ filled.push(getWeekKey(d.toISOString().slice(0, 13).replace(":", ""))); d.setUTCDate(d.getUTCDate() + 7); }}
   }} else if (groupBy === "month") {{
     const [fy, fm] = first.split("-").map(Number), [ly, lm] = last.split("-").map(Number);
@@ -847,22 +876,59 @@ function fmtTimeLabel(raw, groupBy) {{
   return raw;
 }}
 
+function parseGroupStart(groupKey, groupBy) {{
+  if (groupBy === "hour") return new Date(groupKey + ":00:00Z");
+  if (groupBy === "day") return new Date(groupKey + "T00:00:00Z");
+  if (groupBy === "week") return parseWeekKey(groupKey);
+  if (groupBy === "month") return new Date(groupKey + "-01T00:00:00Z");
+  return new Date(groupKey);
+}}
+
+function getLookbackCutoff(anchorDate, lookback) {{
+  if (lookback === "all") return null;
+  const amount = Number(lookback.slice(0, -1));
+  const unit = lookback.slice(-1);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const cutoff = new Date(anchorDate.getTime());
+  if (unit === "m") cutoff.setUTCMonth(cutoff.getUTCMonth() - amount);
+  if (unit === "y") cutoff.setUTCFullYear(cutoff.getUTCFullYear() - amount);
+  return cutoff;
+}}
+
+function filterLabelsByLookback(labels, groupBy, lookback) {{
+  if (!labels.length || lookback === "all") return labels;
+  const anchorDate = parseGroupStart(labels[labels.length - 1], groupBy);
+  if (Number.isNaN(anchorDate.getTime())) return labels;
+  const cutoff = getLookbackCutoff(anchorDate, lookback);
+  if (!cutoff) return labels;
+
+  return labels.filter(label => {{
+    const pointDate = parseGroupStart(label, groupBy);
+    return !Number.isNaN(pointDate.getTime()) && pointDate >= cutoff;
+  }});
+}}
+
 const CHART_GRID_COLOR = "#3d3b36";
 const CHART_TEXT_COLOR = "#a39e90";
 
 function renderTimeline() {{
-  const {{ chartType, tokenType, groupBy }} = tlState;
+  const {{ chartType, tokenType, groupBy, lookback }} = tlState;
   const grouped = groupData(RAW_TIMELINE, groupBy);
-  const labels = fillGaps(Object.keys(grouped), groupBy);
+  const labels = filterLabelsByLookback(fillGaps(Object.keys(grouped), groupBy), groupBy, lookback);
   const visibleModels = TIMELINE_MODELS.filter(m => activeProvider === "all" || m.provider === activeProvider);
 
   const datasets = visibleModels.map(m => {{
-    const data = labels.map(l => {{
+    const series = labels.map(l => {{
       const b = grouped[l]?.[m.key] || {{ input: 0, output: 0 }};
       if (tokenType === "input") return b.input;
       if (tokenType === "output") return b.output;
       return b.input + b.output;
     }});
+
+    const firstRealIdx = series.findIndex(v => v > 0);
+    const data = series.map((v, idx) => (firstRealIdx !== -1 && idx < firstRealIdx ? null : v));
+
     return {{
       label: m.name, data,
       borderColor: m.color,
@@ -904,6 +970,16 @@ function renderTimeline() {{
         }}
       }},
     }},
+  }});
+}}
+
+function initLookbackSelect() {{
+  const select = document.getElementById("lookbackSelect");
+  if (!select) return;
+  select.value = tlState.lookback;
+  select.addEventListener("change", e => {{
+    tlState.lookback = e.target.value;
+    renderTimeline();
   }});
 }}
 
@@ -1000,6 +1076,7 @@ function renderAll() {{
 initNav();
 initFilterBar();
 initSortable();
+initLookbackSelect();
 
 function setupGroup(id, stateKey) {{
   document.getElementById(id).addEventListener("click", e => {{
