@@ -3,11 +3,16 @@ import http.server
 import socketserver
 import subprocess
 import os
+import sys
 import webbrowser
 
-PORT = 9999
+PORT = int(os.environ.get("PORT", "9999"))
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(TOOL_DIR, "output")
+
+
+class ReusableTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
 
 class RegeneratingHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
@@ -22,9 +27,17 @@ class RegeneratingHandler(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
 os.chdir(OUTPUT_DIR)
-with socketserver.TCPServer(('', PORT), RegeneratingHandler) as httpd:
-    url = f'http://localhost:{PORT}/latest.html'
-    print(f'Serving at {url}')
-    print('Regenerates on each page refresh')
-    webbrowser.open(url)
-    httpd.serve_forever()
+try:
+    with ReusableTCPServer(("", PORT), RegeneratingHandler) as httpd:
+        url = f"http://localhost:{PORT}/latest.html"
+        print(f"Serving at {url}")
+        print("Regenerates on each page refresh")
+        webbrowser.open(url)
+        httpd.serve_forever()
+except OSError as e:
+    if e.errno == 48:
+        print(f"Port {PORT} is already in use.", file=sys.stderr)
+        print(f"Use a different port: PORT={PORT + 1} python3 serve.py", file=sys.stderr)
+        print(f"Or stop the current process: lsof -nP -iTCP:{PORT} -sTCP:LISTEN", file=sys.stderr)
+        sys.exit(1)
+    raise
