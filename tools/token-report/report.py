@@ -1,7 +1,6 @@
 """HTML report generation — provider-agnostic with client-side provider filtering."""
 
 import json
-import os
 from datetime import datetime
 
 
@@ -38,15 +37,8 @@ PROVIDER_COLORS = {
 
 def build_html(data: dict) -> str:
     model_stats = data["model_stats"]
-    hourly_data = data["hourly"]
-    project_stats = data["project_stats"]
-    session_stats = data.get("session_stats", [])
+    raw_messages = data.get("messages", [])
     provider_totals = data.get("provider_totals", {})
-    total_msgs = data["total_messages"]
-    total_sess = data["total_sessions"]
-    month_cost = data.get("month_cost_estimated", 0.0)
-    month_stats = data.get("month_stats", {})
-    current_month = data.get("current_month", "")
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -72,7 +64,6 @@ def build_html(data: dict) -> str:
             "reasoning": ms["reasoning"],
             "cache_read": ms["cache_read"],
             "cost_estimated": round(ms["cost_estimated"], 2),
-            "month_cost": round(month_stats.get(k, {}).get("cost_estimated", 0.0), 2),
         }
         for k, ms in sorted_models
     ])
@@ -90,29 +81,7 @@ def build_html(data: dict) -> str:
         for p in active_providers
     ])
 
-    # Timeline needs provider info per model in hourly data
-    # Enrich hourly with provider mapping
-    model_provider_map = {k: ms.get("provider", "") for k, ms in model_stats.items()}
-
-    timeline_raw = json.dumps(hourly_data)
-    timeline_models = json.dumps([
-        {"key": k, "name": k, "color": model_colors[k], "provider": model_provider_map.get(k, "")}
-        for k, _ in sorted_models
-    ])
-
-    # Project data with per-model breakdown (so we can filter by provider)
-    projects_js_data = {}
-    for path, model_map in project_stats.items():
-        dir_name = os.path.basename(path) or path
-        projects_js_data[dir_name] = {
-            "path": path,
-            "models": {
-                mk: {"messages": mv["messages"], "input": mv["input"], "output": mv["output"]}
-                for mk, mv in model_map.items()
-            }
-        }
-    projects_js = json.dumps(projects_js_data)
-    sessions_js = json.dumps(session_stats)
+    messages_js = json.dumps(raw_messages)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -267,6 +236,16 @@ def build_html(data: dict) -> str:
       transition: all 0.15s;
     }}
     .filter-btn:hover {{ color: var(--text); border-color: var(--text-muted); }}
+    .global-range {{
+      margin-left: auto;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.35rem 0.55rem;
+      font-size: 0.75rem;
+      min-width: 9rem;
+    }}
     .action-btn {{
       margin-left: auto;
       padding: 0.35rem 0.85rem;
@@ -291,6 +270,31 @@ def build_html(data: dict) -> str:
     .insights-card h3 {{ margin-bottom: 0.5rem; }}
     .insights-card ul {{ margin: 0; padding-left: 1.1rem; }}
     .insights-card li {{ color: var(--text-muted); font-size: 0.85rem; margin: 0.2rem 0; }}
+    .session-detail {{
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+    }}
+    .session-detail.open {{ display: flex; }}
+    .session-detail-panel {{
+      width: min(920px, 92vw);
+      max-height: 86vh;
+      overflow: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+    }}
+    .session-detail-head {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }}
+    .session-detail-close {{ background: transparent; border: 1px solid var(--border); color: var(--text-muted); border-radius: 8px; padding: 0.2rem 0.5rem; cursor: pointer; }}
+    .session-detail-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; margin-bottom: 0.9rem; }}
+    .session-detail-chip {{ border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem; }}
+    .session-detail-chip .k {{ font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; }}
+    .session-detail-chip .v {{ font-size: 0.95rem; font-weight: 600; }}
 
     .summary-grid {{
       display: grid;
@@ -494,6 +498,7 @@ def build_html(data: dict) -> str:
     @media (max-width: 900px) {{
       .charts-grid-2 {{ grid-template-columns: 1fr; }}
       .summary-grid {{ grid-template-columns: repeat(2, 1fr); }}
+      .session-detail-grid {{ grid-template-columns: repeat(2, 1fr); }}
       aside {{ display: none; }}
     }}
 
@@ -540,6 +545,14 @@ def build_html(data: dict) -> str:
   <div class="filter-bar">
     <span class="filter-label">Filter</span>
     <button class="filter-btn active" data-provider="all">All</button>
+    <select id="globalRangeSelect" class="global-range" aria-label="Global date range">
+      <option value="30d">Last 30 days</option>
+      <option value="90d" selected>Last 90 days</option>
+      <option value="180d">Last 180 days</option>
+      <option value="1y">Last 1 year</option>
+      <option value="2y">Last 2 years</option>
+      <option value="all">All time</option>
+    </select>
   </div>
 
   <!-- Overview Page -->
@@ -699,6 +712,30 @@ def build_html(data: dict) -> str:
       </div>
     </div>
   </div>
+
+  <div id="sessionDetailModal" class="session-detail" role="dialog" aria-modal="true" aria-label="Session details">
+    <div class="session-detail-panel">
+      <div class="session-detail-head">
+        <h3 id="sessionDetailTitle">Session Details</h3>
+        <button id="sessionDetailClose" class="session-detail-close">Close</button>
+      </div>
+      <div id="sessionDetailMeta" class="session-detail-grid"></div>
+      <div class="table-card">
+        <h3>Model Breakdown</h3>
+        <table id="sessionDetailTable">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th class="right">Input</th>
+              <th class="right">Output</th>
+              <th class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </main>
 
 <footer>AI Token Usage Report</footer>
@@ -709,23 +746,45 @@ def build_html(data: dict) -> str:
 // =========================================================================
 const ALL_MODELS = {models_js};
 const PROVIDERS = {providers_js};
-const RAW_TIMELINE = {timeline_raw};
-const TIMELINE_MODELS = {timeline_models};
-const PROJECTS = {projects_js};
-const SESSIONS = {sessions_js};
+const RAW_MESSAGES = {messages_js};
 const PROVIDER_COLORS = {json.dumps(PROVIDER_COLORS)};
-const CURRENT_MONTH = "{current_month}";
-const TOTAL_SESSIONS = {total_sess};
 
 // Model -> provider lookup
 const MODEL_PROVIDER = {{}};
 ALL_MODELS.forEach(m => MODEL_PROVIDER[m.key] = m.provider);
+const MODEL_META = {{}};
+ALL_MODELS.forEach(m => {{ MODEL_META[m.key] = m; }});
+const MODEL_RATE = {{}};
+ALL_MODELS.forEach(m => {{
+  const denom = (m.input || 0) + (m.output || 0) + (m.cache_read || 0);
+  MODEL_RATE[m.key] = denom > 0 ? (m.cost_estimated || 0) / denom : 0;
+}});
+
+const NORMALIZED_MESSAGES = RAW_MESSAGES.map(m => {{
+  const provider = m.provider || "unknown";
+  const modelKey = `${{m.model}} [${{provider}}]`;
+  return {{
+    provider,
+    model: m.model,
+    modelKey,
+    input: m.input_tokens || 0,
+    output: m.output_tokens || 0,
+    reasoning: m.reasoning_tokens || 0,
+    cache_read: m.cache_read_tokens || 0,
+    cache_write: m.cache_write_tokens || 0,
+    cost_logged: m.cost || 0,
+    timestamp_ms: m.timestamp_ms || 0,
+    session_id: m.session_id || "(unknown)",
+    project: m.project || "unknown",
+  }};
+}});
 
 // =========================================================================
 // State
 // =========================================================================
 let activeProvider = "all"; // "all" or a provider name
 let tlState = {{ chartType: "line", tokenType: "total", groupBy: "day", lookback: "3m" }};
+let globalRange = "90d";
 
 const chartDefaults = {{
   responsive: true,
@@ -742,9 +801,118 @@ const fmtCompact = n => {{
 }};
 const fmtCost = c => "$" + c.toFixed(2);
 
-function getModels() {{
-  if (activeProvider === "all") return ALL_MODELS;
-  return ALL_MODELS.filter(m => m.provider === activeProvider);
+function getGlobalCutoff() {{
+  if (globalRange === "all") return 0;
+  const now = new Date();
+  const c = new Date(now.getTime());
+  if (globalRange.endsWith("d")) c.setUTCDate(c.getUTCDate() - Number(globalRange.slice(0, -1)));
+  else if (globalRange.endsWith("y")) c.setUTCFullYear(c.getUTCFullYear() - Number(globalRange.slice(0, -1)));
+  return c.getTime();
+}}
+
+function getFilteredMessages() {{
+  const cutoff = getGlobalCutoff();
+  return NORMALIZED_MESSAGES.filter(m => {{
+    if (activeProvider !== "all" && m.provider !== activeProvider) return false;
+    if (!cutoff || !m.timestamp_ms) return true;
+    return m.timestamp_ms >= cutoff;
+  }});
+}}
+
+function getSessionRows() {{
+  const filtered = getFilteredMessages();
+  const rows = {{}};
+  const sessionModelTotals = {{}};
+  for (const m of filtered) {{
+    const key = `${{m.provider}}:${{m.session_id}}`;
+    if (!rows[key]) {{
+      rows[key] = {{
+        provider: m.provider,
+        session_id: m.session_id,
+        project: m.project || "unknown",
+        messages: 0,
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache_read: 0,
+        cache_write: 0,
+        total: 0,
+        model_count: 0,
+        models: new Set(),
+        start_ms: 0,
+        end_ms: 0,
+      }};
+    }}
+    const r = rows[key];
+    r.messages += 1;
+    r.input += m.input;
+    r.output += m.output;
+    r.reasoning += m.reasoning;
+    r.cache_read += m.cache_read;
+    r.cache_write += m.cache_write;
+    r.total += m.input + m.output;
+    r.models.add(m.modelKey);
+    if (!sessionModelTotals[key]) sessionModelTotals[key] = {{}};
+    if (!sessionModelTotals[key][m.modelKey]) sessionModelTotals[key][m.modelKey] = 0;
+    sessionModelTotals[key][m.modelKey] += m.input + m.output + m.cache_read;
+    if (!r.start_ms || (m.timestamp_ms && m.timestamp_ms < r.start_ms)) r.start_ms = m.timestamp_ms;
+    if (m.timestamp_ms > r.end_ms) r.end_ms = m.timestamp_ms;
+    if (r.project === "unknown" && m.project) r.project = m.project;
+  }}
+
+  return Object.values(rows).map(r => {{
+    let cost = 0;
+    for (const modelKey of r.models) {{
+      const rate = MODEL_RATE[modelKey] || 0;
+      const key = `${{r.provider}}:${{r.session_id}}`;
+      const modelTokens = sessionModelTotals[key]?.[modelKey] || 0;
+      cost += modelTokens * rate;
+    }}
+    return {{ ...r, model_count: r.models.size, cost_estimated: cost }};
+  }});
+}}
+
+function getModelRows() {{
+  const rows = {{}};
+  for (const m of getFilteredMessages()) {{
+    if (!rows[m.modelKey]) {{
+      const meta = MODEL_META[m.modelKey] || {{}};
+      rows[m.modelKey] = {{
+        key: m.modelKey,
+        provider: m.provider,
+        color: meta.color || "#818cf8",
+        messages: 0,
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cache_read: 0,
+        cost_estimated: 0,
+      }};
+    }}
+    const r = rows[m.modelKey];
+    r.messages += 1;
+    r.input += m.input;
+    r.output += m.output;
+    r.reasoning += m.reasoning;
+    r.cache_read += m.cache_read;
+  }}
+  return Object.values(rows).map(r => {{
+    const rate = MODEL_RATE[r.key] || 0;
+    return {{ ...r, cost_estimated: (r.input + r.output + r.cache_read) * rate }};
+  }}).sort((a, b) => (b.input + b.output) - (a.input + a.output));
+}}
+
+function getProviderRows() {{
+  const rows = {{}};
+  for (const m of getFilteredMessages()) {{
+    if (!rows[m.provider]) rows[m.provider] = {{ name: m.provider, input: 0, output: 0, messages: 0, sessions: new Set(), color: PROVIDER_COLORS[m.provider] || "#a39e90" }};
+    const r = rows[m.provider];
+    r.input += m.input;
+    r.output += m.output;
+    r.messages += 1;
+    r.sessions.add(m.session_id);
+  }}
+  return Object.values(rows).map(r => ({{ ...r, sessions: r.sessions.size }}));
 }}
 
 // =========================================================================
@@ -768,6 +936,7 @@ function initNav() {{
 // =========================================================================
 function initFilterBar() {{
   const bar = document.querySelector(".filter-bar");
+  const globalRangeSelect = document.getElementById("globalRangeSelect");
   PROVIDERS.forEach(p => {{
     const btn = document.createElement("button");
     btn.className = "filter-btn";
@@ -784,6 +953,13 @@ function initFilterBar() {{
     activeProvider = btn.dataset.provider;
     renderAll();
   }});
+  if (globalRangeSelect) {{
+    globalRangeSelect.value = globalRange;
+    globalRangeSelect.addEventListener("change", e => {{
+      globalRange = e.target.value;
+      renderAll();
+    }});
+  }}
   // Style active buttons
   updateFilterStyles();
 }}
@@ -808,17 +984,16 @@ function updateFilterStyles() {{
 // Summary cards
 // =========================================================================
 function renderSummaryCards() {{
-  const models = getModels();
+  const models = getModelRows();
+  const providerRows = getProviderRows();
+  const sessionRows = getSessionRows();
   const msgs = models.reduce((s, m) => s + m.messages, 0);
   const inp = models.reduce((s, m) => s + m.input, 0);
   const out = models.reduce((s, m) => s + m.output, 0);
   const rea = models.reduce((s, m) => s + m.reasoning, 0);
   const cr = models.reduce((s, m) => s + m.cache_read, 0);
   const cost = models.reduce((s, m) => s + m.cost_estimated, 0);
-
-  const sess = activeProvider === "all"
-    ? TOTAL_SESSIONS
-    : (PROVIDERS.find(p => p.name === activeProvider)?.sessions || 0);
+  const sess = sessionRows.length;
 
   let html = `
     <div class="card"><div class="label">Messages</div><div class="value">${{fmtCompact(msgs)}}</div><div class="sub">${{fmtNum(msgs)}} turns</div></div>
@@ -827,13 +1002,13 @@ function renderSummaryCards() {{
     <div class="card"><div class="label">Output</div><div class="value" style="color:#22d3ee">${{fmtCompact(out)}}</div><div class="sub">${{fmtNum(out)}}</div></div>
     <div class="card"><div class="label">Reasoning</div><div class="value" style="color:#f59e0b">${{fmtCompact(rea)}}</div><div class="sub">${{fmtNum(rea)}}</div></div>
     <div class="card"><div class="label">Cache Read</div><div class="value" style="color:#10b981">${{fmtCompact(cr)}}</div><div class="sub">${{fmtNum(cr)}}</div></div>
-    <div class="card"><div class="label">Est. Cost (all time)</div><div class="value" style="color:#22d3ee">${{fmtCost(cost)}}</div><div class="sub">based on public pricing</div></div>
-    <div class="card"><div class="label">${{CURRENT_MONTH}} Cost</div><div class="value" style="color:#f59e0b">${{fmtCost(models.reduce((s, m) => s + m.month_cost, 0))}}</div><div class="sub">this month</div></div>
+    <div class="card"><div class="label">Est. Cost</div><div class="value" style="color:#22d3ee">${{fmtCost(cost)}}</div><div class="sub">selected range</div></div>
+    <div class="card"><div class="label">Range</div><div class="value" style="color:#f59e0b">${{globalRange === 'all' ? 'All' : globalRange.toUpperCase()}}</div><div class="sub">applies to all views</div></div>
   `;
 
   if (activeProvider === "all") {{
-    PROVIDERS.forEach(p => {{
-      html += `<div class="card"><div class="label" style="color:${{p.color}}">${{p.name}}</div><div class="value">${{fmtCompact(p.messages)}}</div><div class="sub">${{fmtNum(p.input + p.output)}} tokens &middot; ${{fmtCost(p.cost_estimated)}}</div></div>`;
+    providerRows.forEach(p => {{
+      html += `<div class="card"><div class="label" style="color:${{p.color}}">${{p.name}}</div><div class="value">${{fmtCompact(p.messages)}}</div><div class="sub">${{fmtNum((p.input || 0) + (p.output || 0))}} tokens</div></div>`;
     }});
   }}
 
@@ -846,7 +1021,7 @@ function renderSummaryCards() {{
 let barChart, donutChart, provDonutChart;
 
 function renderBarChart() {{
-  const models = getModels();
+  const models = getModelRows();
   if (barChart) barChart.destroy();
   barChart = new Chart(document.getElementById("barChart"), {{
     type: "bar",
@@ -868,7 +1043,7 @@ function renderBarChart() {{
 }}
 
 function renderDonutChart() {{
-  const models = getModels();
+  const models = getModelRows();
   if (donutChart) donutChart.destroy();
   donutChart = new Chart(document.getElementById("donutChart"), {{
     type: "doughnut",
@@ -882,7 +1057,7 @@ function renderDonutChart() {{
 
 function renderProvDonutChart() {{
   if (provDonutChart) provDonutChart.destroy();
-  const provs = activeProvider === "all" ? PROVIDERS : PROVIDERS.filter(p => p.name === activeProvider);
+  const provs = getProviderRows();
   provDonutChart = new Chart(document.getElementById("provDonutChart"), {{
     type: "doughnut",
     data: {{
@@ -911,21 +1086,21 @@ function parseWeekKey(weekKey) {{
   return new Date(Date.UTC(year, 0, 1 + (weekNum - 1) * 7 - jan1.getUTCDay() + 1));
 }}
 
-function groupData(raw, groupBy) {{
+function groupData(groupBy) {{
   const buckets = {{}};
-  for (const [hourKey, models] of Object.entries(raw)) {{
+  for (const msg of getFilteredMessages()) {{
+    if (!msg.timestamp_ms) continue;
+    const iso = new Date(msg.timestamp_ms).toISOString();
+    const hourKey = iso.slice(0, 13);
     let bk;
     if (groupBy === "hour") bk = hourKey;
     else if (groupBy === "day") bk = hourKey.slice(0, 10);
     else if (groupBy === "week") bk = getWeekKey(hourKey);
     else bk = hourKey.slice(0, 7);
     if (!buckets[bk]) buckets[bk] = {{}};
-    for (const [mk, t] of Object.entries(models)) {{
-      if (activeProvider !== "all" && MODEL_PROVIDER[mk] !== activeProvider) continue;
-      if (!buckets[bk][mk]) buckets[bk][mk] = {{ input: 0, output: 0 }};
-      buckets[bk][mk].input += t.input || 0;
-      buckets[bk][mk].output += t.output || 0;
-    }}
+    if (!buckets[bk][msg.modelKey]) buckets[bk][msg.modelKey] = {{ input: 0, output: 0 }};
+    buckets[bk][msg.modelKey].input += msg.input || 0;
+    buckets[bk][msg.modelKey].output += msg.output || 0;
   }}
   return buckets;
 }}
@@ -995,9 +1170,9 @@ const CHART_TEXT_COLOR = "#a39e90";
 
 function renderTimeline() {{
   const {{ chartType, tokenType, groupBy, lookback }} = tlState;
-  const grouped = groupData(RAW_TIMELINE, groupBy);
+  const grouped = groupData(groupBy);
   const labels = filterLabelsByLookback(fillGaps(Object.keys(grouped), groupBy), groupBy, lookback);
-  const visibleModels = TIMELINE_MODELS.filter(m => activeProvider === "all" || m.provider === activeProvider);
+  const visibleModels = getModelRows().map(m => ({{ key: m.key, name: m.key, color: m.color, provider: m.provider }}));
 
   const datasets = visibleModels.map(m => {{
     const series = labels.map(l => {{
@@ -1069,7 +1244,7 @@ function initLookbackSelect() {{
 // Tables
 // =========================================================================
 function renderModelTable() {{
-  const models = getModels();
+  const models = getModelRows();
   const tbody = document.querySelector("#modelTable tbody");
   tbody.innerHTML = models.map(m => {{
     const total = m.input + m.output;
@@ -1090,16 +1265,16 @@ function renderModelTable() {{
 
 function renderProjectTable() {{
   const tbody = document.querySelector("#projectTable tbody");
-  const rows = [];
-  for (const [dirName, proj] of Object.entries(PROJECTS)) {{
-    let msgs = 0, inp = 0, out = 0;
-    for (const [mk, mv] of Object.entries(proj.models)) {{
-      if (activeProvider !== "all" && MODEL_PROVIDER[mk] !== activeProvider) continue;
-      msgs += mv.messages; inp += mv.input; out += mv.output;
-    }}
-    if (msgs === 0) continue;
-    rows.push({{ dirName, path: proj.path, msgs, inp, out, total: inp + out }});
+  const byProject = {{}};
+  for (const m of getFilteredMessages()) {{
+    const key = m.project || "unknown";
+    if (!byProject[key]) byProject[key] = {{ dirName: key, path: key, msgs: 0, inp: 0, out: 0, total: 0 }};
+    byProject[key].msgs += 1;
+    byProject[key].inp += m.input;
+    byProject[key].out += m.output;
+    byProject[key].total += m.input + m.output;
   }}
+  const rows = Object.values(byProject);
   rows.sort((a, b) => b.total - a.total);
   tbody.innerHTML = rows.map(r => `<tr>
     <td class="mono path" title="${{r.path}}" data-sort="${{r.dirName}}">${{r.dirName}}</td>
@@ -1125,12 +1300,11 @@ function fmtDateTime(ms) {{
 
 function renderSessionTable() {{
   const tbody = document.querySelector("#sessionTable tbody");
-  const rows = SESSIONS
-    .filter(s => activeProvider === "all" || s.provider === activeProvider)
+  const rows = getSessionRows()
     .slice()
     .sort((a, b) => (b.total || 0) - (a.total || 0));
 
-  tbody.innerHTML = rows.map(s => `<tr>
+  tbody.innerHTML = rows.map(s => `<tr data-session-key="${{s.provider}}:${{s.session_id}}">
     <td class="mono" data-sort="${{s.session_id}}">${{s.session_id}}</td>
     <td data-sort="${{s.provider}}"><span class="provider-badge" style="color:${{PROVIDER_COLORS[s.provider] || '#a39e90'}}">${{s.provider}}</span></td>
     <td class="mono path" title="${{s.project}}" data-sort="${{s.project}}">${{s.project}}</td>
@@ -1142,10 +1316,68 @@ function renderSessionTable() {{
     <td class="mono right cost" data-sort="${{(s.cost_estimated || 0).toFixed(6)}}">${{fmtCost(s.cost_estimated || 0)}}</td>
     <td class="mono" data-sort="${{s.end_ms || 0}}">${{fmtDateTime(s.end_ms)}}</td>
   </tr>`).join("");
+
+  tbody.querySelectorAll("tr[data-session-key]").forEach(row => {{
+    row.style.cursor = "pointer";
+    row.addEventListener("click", () => openSessionDetail(row.dataset.sessionKey));
+  }});
+}}
+
+function openSessionDetail(sessionKey) {{
+  const [provider, ...sidParts] = (sessionKey || "").split(":");
+  const sessionId = sidParts.join(":");
+  const messages = getFilteredMessages().filter(m => m.provider === provider && m.session_id === sessionId);
+  if (!messages.length) return;
+
+  const modal = document.getElementById("sessionDetailModal");
+  const title = document.getElementById("sessionDetailTitle");
+  const meta = document.getElementById("sessionDetailMeta");
+  const tbody = document.querySelector("#sessionDetailTable tbody");
+
+  const totals = messages.reduce((a, m) => {{
+    a.messages += 1; a.input += m.input; a.output += m.output; a.reasoning += m.reasoning; a.cache_read += m.cache_read;
+    a.start = a.start ? Math.min(a.start, m.timestamp_ms || a.start) : m.timestamp_ms;
+    a.end = Math.max(a.end, m.timestamp_ms || 0);
+    return a;
+  }}, {{ messages: 0, input: 0, output: 0, reasoning: 0, cache_read: 0, start: 0, end: 0 }});
+
+  const byModel = {{}};
+  messages.forEach(m => {{
+    if (!byModel[m.modelKey]) byModel[m.modelKey] = {{ key: m.modelKey, input: 0, output: 0, total: 0 }};
+    byModel[m.modelKey].input += m.input;
+    byModel[m.modelKey].output += m.output;
+    byModel[m.modelKey].total += m.input + m.output;
+  }});
+
+  title.textContent = `Session Details: ${{provider}}:${{sessionId}}`;
+  meta.innerHTML = `
+    <div class="session-detail-chip"><div class="k">Project</div><div class="v">${{messages[0].project || 'unknown'}}</div></div>
+    <div class="session-detail-chip"><div class="k">Messages</div><div class="v">${{fmtNum(totals.messages)}}</div></div>
+    <div class="session-detail-chip"><div class="k">Tokens</div><div class="v">${{fmtNum(totals.input + totals.output)}}</div></div>
+    <div class="session-detail-chip"><div class="k">Last Active</div><div class="v">${{fmtDateTime(totals.end)}}</div></div>
+  `;
+
+  const modelRows = Object.values(byModel).sort((a, b) => b.total - a.total);
+  tbody.innerHTML = modelRows.map(r => `<tr>
+    <td class="mono">${{r.key}}</td>
+    <td class="mono right">${{fmtNum(r.input)}}</td>
+    <td class="mono right">${{fmtNum(r.output)}}</td>
+    <td class="mono right">${{fmtNum(r.total)}}</td>
+  </tr>`).join("");
+
+  modal.classList.add("open");
+}}
+
+function initSessionDetailModal() {{
+  const modal = document.getElementById("sessionDetailModal");
+  const closeBtn = document.getElementById("sessionDetailClose");
+  if (!modal || !closeBtn) return;
+  closeBtn.addEventListener("click", () => modal.classList.remove("open"));
+  modal.addEventListener("click", e => {{ if (e.target === modal) modal.classList.remove("open"); }});
 }}
 
 function buildInsights() {{
-  const models = getModels();
+  const models = getModelRows();
   if (!models.length) return ["No data available for the selected filter."];
 
   const totalInput = models.reduce((s, m) => s + m.input, 0);
@@ -1155,17 +1387,38 @@ function buildInsights() {{
   const totalMessages = models.reduce((s, m) => s + m.messages, 0);
 
   const topModel = models.slice().sort((a, b) => (b.input + b.output) - (a.input + a.output))[0];
-  const topSessions = SESSIONS
-    .filter(s => activeProvider === "all" || s.provider === activeProvider)
+  const topSessions = getSessionRows()
     .slice()
     .sort((a, b) => (b.total || 0) - (a.total || 0))
     .slice(0, 3);
 
+  const byDay = {{}};
+  getFilteredMessages().forEach(m => {{
+    if (!m.timestamp_ms) return;
+    const day = new Date(m.timestamp_ms).toISOString().slice(0, 10);
+    byDay[day] = (byDay[day] || 0) + m.input + m.output;
+  }});
+  const dayKeys = Object.keys(byDay).sort();
+  const recent = dayKeys.slice(-7).map(d => byDay[d] || 0);
+  const prev = dayKeys.slice(-14, -7).map(d => byDay[d] || 0);
+  const recentAvg = recent.length ? recent.reduce((a, b) => a + b, 0) / recent.length : 0;
+  const prevAvg = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : 0;
+  const trendPct = prevAvg > 0 ? ((recentAvg - prevAvg) / prevAvg) * 100 : 0;
+
+  const topDay = dayKeys
+    .map(d => [d, byDay[d]])
+    .sort((a, b) => b[1] - a[1])[0];
+
+  const topModelShare = totalTokens > 0 ? ((topModel.input + topModel.output) / totalTokens) * 100 : 0;
+
   const insights = [
     `Processed ${{fmtNum(totalMessages)}} messages and ${{fmtNum(totalTokens)}} tokens (in: ${{fmtNum(totalInput)}}, out: ${{fmtNum(totalOutput)}}).`,
-    `Estimated spend is ${{fmtCost(totalCost)}} for the current filter.`,
-    `Top model is ${{topModel.key}} with ${{fmtNum(topModel.input + topModel.output)}} tokens.`,
+    `Estimated spend is ${{fmtCost(totalCost)}} for the current filter and date range.`,
+    `Top model is ${{topModel.key}} with ${{fmtNum(topModel.input + topModel.output)}} tokens (${{topModelShare.toFixed(1)}}% share).`,
   ];
+
+  if (prev.length && recent.length) insights.push(`7-day trend is ${{trendPct >= 0 ? '+' : ''}}${{trendPct.toFixed(1)}}% vs previous 7 days.`);
+  if (topDay) insights.push(`Largest usage spike happened on ${{topDay[0]}} with ${{fmtCompact(topDay[1])}} tokens.`);
 
   if (topSessions.length) {{
     const sessionSummary = topSessions.map(s => `${{s.provider}}:${{s.session_id}} (${{fmtCompact(s.total || 0)}})`).join(", ");
@@ -1173,7 +1426,7 @@ function buildInsights() {{
   }}
 
   if (activeProvider === "all") {{
-    const providerLead = PROVIDERS.slice().sort((a, b) => (b.input + b.output) - (a.input + a.output))[0];
+    const providerLead = getProviderRows().slice().sort((a, b) => (b.input + b.output) - (a.input + a.output))[0];
     if (providerLead) {{
       insights.push(`Highest token source is ${{providerLead.name}} with ${{fmtCompact((providerLead.input || 0) + (providerLead.output || 0))}} tokens.`);
     }}
@@ -1246,6 +1499,7 @@ initFilterBar();
 initSortable();
 initLookbackSelect();
 initAnalyzeButton();
+initSessionDetailModal();
 
 function setupGroup(id, stateKey) {{
   document.getElementById(id).addEventListener("click", e => {{
