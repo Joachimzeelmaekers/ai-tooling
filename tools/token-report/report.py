@@ -23,15 +23,15 @@ def fmt_cost(c: float) -> str:
 
 
 COLORS = [
-    "#6366f1", "#22d3ee", "#f59e0b", "#10b981", "#ef4444",
-    "#a78bfa", "#f472b6", "#34d399", "#fbbf24", "#818cf8",
+    "#d97757", "#b88a5a", "#9f7a4f", "#6f8b6e", "#4f7f78",
+    "#8b6f9b", "#b35f5f", "#7f8c5a", "#a07a65", "#5f7c8a",
 ]
 
 PROVIDER_COLORS = {
     "claude-code": "#d97757",  # terracotta
-    "opencode": "#6366f1",      # indigo
-    "cursor": "#22d3ee",        # cyan
-    "codex": "#ef4444",         # red
+    "opencode": "#b88a5a",      # warm bronze
+    "cursor": "#6f8b6e",        # moss
+    "codex": "#8b6f9b",         # muted plum
 }
 
 
@@ -880,7 +880,7 @@ function getModelRows() {{
       rows[m.modelKey] = {{
         key: m.modelKey,
         provider: m.provider,
-        color: meta.color || "#818cf8",
+        color: meta.color || "#b88a5a",
         messages: 0,
         input: 0,
         output: 0,
@@ -998,12 +998,12 @@ function renderSummaryCards() {{
   let html = `
     <div class="card"><div class="label">Messages</div><div class="value">${{fmtCompact(msgs)}}</div><div class="sub">${{fmtNum(msgs)}} turns</div></div>
     <div class="card"><div class="label">Sessions</div><div class="value">${{fmtCompact(sess)}}</div><div class="sub">unique sessions</div></div>
-    <div class="card"><div class="label">Input</div><div class="value" style="color:#6366f1">${{fmtCompact(inp)}}</div><div class="sub">${{fmtNum(inp)}}</div></div>
-    <div class="card"><div class="label">Output</div><div class="value" style="color:#22d3ee">${{fmtCompact(out)}}</div><div class="sub">${{fmtNum(out)}}</div></div>
-    <div class="card"><div class="label">Reasoning</div><div class="value" style="color:#f59e0b">${{fmtCompact(rea)}}</div><div class="sub">${{fmtNum(rea)}}</div></div>
-    <div class="card"><div class="label">Cache Read</div><div class="value" style="color:#10b981">${{fmtCompact(cr)}}</div><div class="sub">${{fmtNum(cr)}}</div></div>
-    <div class="card"><div class="label">Est. Cost</div><div class="value" style="color:#22d3ee">${{fmtCost(cost)}}</div><div class="sub">selected range</div></div>
-    <div class="card"><div class="label">Range</div><div class="value" style="color:#f59e0b">${{globalRange === 'all' ? 'All' : globalRange.toUpperCase()}}</div><div class="sub">applies to all views</div></div>
+    <div class="card"><div class="label">Input</div><div class="value" style="color:#b88a5a">${{fmtCompact(inp)}}</div><div class="sub">${{fmtNum(inp)}}</div></div>
+    <div class="card"><div class="label">Output</div><div class="value" style="color:#6f8b6e">${{fmtCompact(out)}}</div><div class="sub">${{fmtNum(out)}}</div></div>
+    <div class="card"><div class="label">Reasoning</div><div class="value" style="color:#9f7a4f">${{fmtCompact(rea)}}</div><div class="sub">${{fmtNum(rea)}}</div></div>
+    <div class="card"><div class="label">Cache Read</div><div class="value" style="color:#4f7f78">${{fmtCompact(cr)}}</div><div class="sub">${{fmtNum(cr)}}</div></div>
+    <div class="card"><div class="label">Est. Cost</div><div class="value" style="color:#d97757">${{fmtCost(cost)}}</div><div class="sub">selected range</div></div>
+    <div class="card"><div class="label">Range</div><div class="value" style="color:#8b6f9b">${{globalRange === 'all' ? 'All' : globalRange.toUpperCase()}}</div><div class="sub">applies to all views</div></div>
   `;
 
   if (activeProvider === "all") {{
