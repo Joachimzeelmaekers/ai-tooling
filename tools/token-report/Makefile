@@ -16,7 +16,7 @@ report:
 serve: report
 	@printf "Starting server at http://localhost:9999\n"
 	@printf "Refresh browser to regenerate report\n"
-	@python3 serve.py
+	python3 serve.py
 
 open: report
 	@open output/latest.html
