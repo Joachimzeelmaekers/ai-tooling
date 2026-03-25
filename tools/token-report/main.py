@@ -18,8 +18,10 @@ from report import build_html
 from cache import cached_load
 
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(TOOL_DIR))
 REPORTS_DIR = os.path.join(TOOL_DIR, "output")
 DATA_DIR = os.path.join(TOOL_DIR, "data")
+PRESENTATIONS_DIR = os.path.join(ROOT_DIR, "presentations")
 
 # Register providers here — (name, load_fn)
 PROVIDERS = [
@@ -296,6 +298,30 @@ def _cleanup_reports(reports_dir: str):
             print(f"  Removed old report: {os.path.basename(old)}")
 
 
+def load_presentations() -> list[dict]:
+    """Load markdown presentations from the presentations directory."""
+    presentations = []
+    if not os.path.isdir(PRESENTATIONS_DIR):
+        return presentations
+    import glob as g
+    for path in sorted(g.glob(os.path.join(PRESENTATIONS_DIR, "*.md"))):
+        name = os.path.splitext(os.path.basename(path))[0]
+        with open(path) as f:
+            content = f.read()
+        # Extract title from first heading
+        title = name.replace("-", " ").title()
+        for line in content.splitlines():
+            if line.startswith("# "):
+                title = line[2:].strip()
+                break
+        presentations.append({
+            "name": name,
+            "title": title,
+            "content": content,
+        })
+    return presentations
+
+
 def main():
     os.makedirs(REPORTS_DIR, exist_ok=True)
 
@@ -333,6 +359,11 @@ def main():
         for result in results
         for msg in result.messages
     ]
+
+    presentations = load_presentations()
+    data["presentations"] = presentations
+    if presentations:
+        print(f"  Loaded {len(presentations)} presentation(s)")
 
     print("Generating HTML...")
     html = build_html(data)

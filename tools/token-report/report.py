@@ -39,6 +39,7 @@ def build_html(data: dict) -> str:
     model_stats = data["model_stats"]
     raw_messages = data.get("messages", [])
     provider_totals = data.get("provider_totals", {})
+    presentations = data.get("presentations", [])
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -366,6 +367,71 @@ def build_html(data: dict) -> str:
     }}
     .table-card h3 {{ padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); margin: 0; }}
 
+    .presentation-card {{ padding: 0; }}
+    .presentation-header {{ padding: 1rem 1.5rem; }}
+    .presentation-header h3 {{ border: none; padding: 0; margin: 0; }}
+    .presentation-body {{
+      padding: 0 2rem 2rem;
+      line-height: 1.7;
+      font-size: 0.95rem;
+      color: var(--text);
+    }}
+    .presentation-body h2 {{
+      font-size: 1.3rem;
+      margin: 2.5rem 0 1rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }}
+    .presentation-body h3 {{
+      font-size: 1.05rem;
+      color: var(--brand);
+      margin: 1.5rem 0 0.5rem;
+      padding: 0;
+      border: none;
+    }}
+    .presentation-body h4 {{
+      font-size: 0.95rem;
+      color: var(--text);
+      margin: 1.2rem 0 0.4rem;
+    }}
+    .presentation-body p {{
+      margin: 0.6rem 0;
+    }}
+    .presentation-body ul, .presentation-body ol {{
+      margin: 0.5rem 0;
+      padding-left: 1.5rem;
+    }}
+    .presentation-body li {{
+      margin: 0.35rem 0;
+    }}
+    .presentation-body blockquote {{
+      border-left: 3px solid var(--brand);
+      padding: 0.75rem 1.25rem;
+      margin: 1rem 0;
+      background: var(--surface-hover);
+      border-radius: 0 8px 8px 0;
+      color: var(--text-muted);
+      font-style: italic;
+    }}
+    .presentation-body code {{
+      background: var(--surface-hover);
+      padding: 0.15rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.85em;
+    }}
+    .presentation-body hr {{
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2rem 0;
+    }}
+    .presentation-body em {{
+      color: var(--text-muted);
+    }}
+    .presentation-body strong {{
+      color: var(--text);
+    }}
+
     .mono  {{ font-family: ui-monospace, "SF Mono", monospace; }}
     .right {{ text-align: right; }}
     .cost  {{ color: var(--brand); }}
@@ -533,6 +599,10 @@ def build_html(data: dict) -> str:
     <a class="nav-item" data-page="projects">
       <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h4l1 1h7v10H2V3zm0 5h12"/></svg>
       Projects
+    </a>
+    <a class="nav-item" data-page="presentations">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v1H2zm1 2h10v8H3zm2 9h6v1H5zm4-7H7v2h2z"/></svg>
+      Presentations
     </a>
   </nav>
   <div class="sidebar-footer">
@@ -713,6 +783,15 @@ def build_html(data: dict) -> str:
     </div>
   </div>
 
+  <!-- Presentations Page -->
+  <div class="page" id="page-presentations">
+    <div class="page-header">
+      <h2>Presentations</h2>
+      <p>Internal presentation notes and talking points</p>
+    </div>
+    <div class="section" id="presentationsList"></div>
+  </div>
+
   <div id="sessionDetailModal" class="session-detail" role="dialog" aria-modal="true" aria-label="Session details">
     <div class="session-detail-panel">
       <div class="session-detail-head">
@@ -748,6 +827,7 @@ const ALL_MODELS = {models_js};
 const PROVIDERS = {providers_js};
 const RAW_MESSAGES = {messages_js};
 const PROVIDER_COLORS = {json.dumps(PROVIDER_COLORS)};
+const PRESENTATIONS = {json.dumps(presentations)};
 
 // Model -> provider lookup
 const MODEL_PROVIDER = {{}};
@@ -1477,6 +1557,96 @@ function initSortable() {{
 }}
 
 // =========================================================================
+// Presentations
+// =========================================================================
+function renderPresentations() {{
+  const container = document.getElementById("presentationsList");
+  if (!PRESENTATIONS.length) {{
+    container.innerHTML = '<div class="table-card"><p style="color:var(--text-muted)">No presentations found. Add markdown files to the <code>presentations/</code> directory.</p></div>';
+    return;
+  }}
+  container.innerHTML = PRESENTATIONS.map((p, i) => {{
+    const html = markdownToHtml(p.content);
+    return '<div class="table-card presentation-card">' +
+      '<div class="presentation-header" data-index="' + i + '" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between">' +
+        '<h3>' + escHtml(p.title) + '</h3>' +
+        '<span class="presentation-toggle" style="color:var(--text-muted);font-size:0.85rem">&#9660;</span>' +
+      '</div>' +
+      '<div class="presentation-body" id="pres-' + i + '">' + html + '</div>' +
+    '</div>';
+  }}).join("");
+  container.querySelectorAll(".presentation-header").forEach(h => {{
+    h.addEventListener("click", () => {{
+      const body = document.getElementById("pres-" + h.dataset.index);
+      const toggle = h.querySelector(".presentation-toggle");
+      if (body.style.display === "none") {{
+        body.style.display = "block";
+        toggle.innerHTML = "&#9660;";
+      }} else {{
+        body.style.display = "none";
+        toggle.innerHTML = "&#9654;";
+      }}
+    }});
+  }});
+}}
+
+function escHtml(s) {{
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}}
+
+function markdownToHtml(md) {{
+  const lines = md.split("\\n");
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {{
+    const line = lines[i];
+    // Skip top-level title (already shown in header)
+    if (/^# [^#]/.test(line)) {{ i++; continue; }}
+    // Headings
+    if (/^#### (.+)/.test(line)) {{ out.push("<h4>" + inline(line.slice(5)) + "</h4>"); i++; continue; }}
+    if (/^### (.+)/.test(line)) {{ out.push("<h3>" + inline(line.slice(4)) + "</h3>"); i++; continue; }}
+    if (/^## (.+)/.test(line)) {{ out.push("<h2>" + inline(line.slice(3)) + "</h2>"); i++; continue; }}
+    // HR
+    if (/^---\s*$/.test(line)) {{ out.push("<hr>"); i++; continue; }}
+    // Blockquote
+    if (/^> (.+)/.test(line)) {{ out.push("<blockquote>" + inline(line.slice(2)) + "</blockquote>"); i++; continue; }}
+    // Unordered list
+    if (/^- (.+)/.test(line)) {{
+      const items = [];
+      while (i < lines.length && /^- (.+)/.test(lines[i])) {{
+        items.push("<li>" + inline(lines[i].slice(2)) + "</li>");
+        i++;
+      }}
+      out.push("<ul>" + items.join("") + "</ul>");
+      continue;
+    }}
+    // Ordered list
+    if (/^\\d+\\. (.+)/.test(line)) {{
+      const items = [];
+      while (i < lines.length && /^\\d+\\. (.+)/.test(lines[i])) {{
+        items.push("<li>" + inline(lines[i].replace(/^\\d+\\.\\s*/, "")) + "</li>");
+        i++;
+      }}
+      out.push("<ol>" + items.join("") + "</ol>");
+      continue;
+    }}
+    // Empty line
+    if (!line.trim()) {{ i++; continue; }}
+    // Paragraph
+    out.push("<p>" + inline(line) + "</p>");
+    i++;
+  }}
+  return out.join("\\n");
+}}
+
+function inline(s) {{
+  return s
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}}
+
+// =========================================================================
 // Render all
 // =========================================================================
 function renderAll() {{
@@ -1489,6 +1659,7 @@ function renderAll() {{
   renderSessionTable();
   renderModelTable();
   renderProjectTable();
+  renderPresentations();
 }}
 
 // =========================================================================
