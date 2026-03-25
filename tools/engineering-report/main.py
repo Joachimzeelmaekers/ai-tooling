@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Multi-provider Token Report Generator.
-Collects usage from Claude Code, OpenCode (and extensible to Codex, etc.),
-aggregates by model/project/time, and generates a self-contained HTML report.
+Engineering Report Generator.
+Collects AI tool usage, GitHub PR/review stats, and generates a self-contained HTML dashboard.
 """
 
 import json

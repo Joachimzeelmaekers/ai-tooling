@@ -1,16 +1,16 @@
 # AI Tooling
 
-Personal AI development tools. Token usage reporting across providers, prompt analysis, and more.
+Personal engineering tools. Usage reporting across AI providers, GitHub PR/review statistics, prompt analysis, and more.
 
 ## Quick Start
 
 ```bash
-make ai-report
+make engineering-report
 ```
 
-Generates a self-contained HTML report with token usage across all providers and opens it in your browser.
+Generates a self-contained HTML engineering dashboard and opens it in your browser.
 
-## Token Report
+## Engineering Report
 
 Reads local usage data from:
 
@@ -20,6 +20,7 @@ Reads local usage data from:
 | OpenCode | `~/.local/share/opencode/opencode.db` |
 | Cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` |
 | Codex | `~/.codex/sessions/**/*.jsonl` |
+| GitHub | GraphQL API (PRs authored + reviews given) |
 
 Features:
 - Per-model token breakdown with estimated costs
@@ -27,17 +28,21 @@ Features:
 - Timeline charts (hourly/daily)
 - Per-project breakdown
 - Client-side provider filtering
+- GitHub PR statistics (total, per-org, per-repo, size percentiles)
+- Review statistics (approved/commented/changes requested)
+- Workday vs weekend PR averages
 - Data caching (only fetches new data on subsequent runs)
 
 ### Requirements
 
 - Python 3.10+
+- `gh` CLI (authenticated) for GitHub stats
 - No pip dependencies (stdlib only)
 
 ## Other Tools
 
 ```bash
-make prompt-analysis   # Analyze Claude/OpenCode session prompts
-make ai-serve          # Live-reload report server on localhost:9999
-make clean             # Clean all output directories
+make prompt-analysis      # Analyze Claude/OpenCode session prompts
+make engineering-serve    # Live-reload report server on localhost:9999
+make clean               # Clean all output directories
 ```

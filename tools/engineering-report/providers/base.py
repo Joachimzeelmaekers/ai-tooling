@@ -1,4 +1,4 @@
-"""Common types for token report providers."""
+"""Common types for engineering report providers."""
 
 from dataclasses import dataclass, field
 

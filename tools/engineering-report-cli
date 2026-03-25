@@ -1,6 +1,6 @@
 #!/bin/bash
-# ai-report: Open token usage report in browser with auto-regeneration
-# Usage: ai-report [serve|open]
+# engineering-report: Open engineering report in browser with auto-regeneration
+# Usage: engineering-report [serve|open]
 
 SOURCE="$0"
 while [ -L "$SOURCE" ]; do
@@ -10,7 +10,7 @@ while [ -L "$SOURCE" ]; do
 done
 SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 AI_TOOLING_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPORT_DIR="$AI_TOOLING_DIR/tools/token-report"
+REPORT_DIR="$AI_TOOLING_DIR/tools/engineering-report"
 
 case "${1:-serve}" in
     serve)
@@ -20,13 +20,13 @@ case "${1:-serve}" in
         cd "$REPORT_DIR" && make open
         ;;
     help|--help|-h)
-        echo "Usage: ai-report [serve|open]"
+        echo "Usage: engineering-report [serve|open]"
         echo "  serve - Start local server with auto-regeneration (default)"
         echo "  open  - Just open the latest report in browser"
         ;;
     *)
         echo "Unknown command: $1"
-        echo "Usage: ai-report [serve|open]"
+        echo "Usage: engineering-report [serve|open]"
         exit 1
         ;;
 esac

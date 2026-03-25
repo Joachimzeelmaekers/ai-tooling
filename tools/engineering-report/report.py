@@ -90,7 +90,7 @@ def build_html(data: dict) -> str:
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Token Report</title>
+  <title>Engineering Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <style>
     :root {{
@@ -578,7 +578,7 @@ def build_html(data: dict) -> str:
 
 <aside>
   <div class="brand">
-    <h1><span>AI</span> Dashboard</h1>
+    <h1><span>Engineering</span> Dashboard</h1>
   </div>
   <nav>
     <a class="nav-item active" data-page="overview">
@@ -910,7 +910,7 @@ def build_html(data: dict) -> str:
   </div>
 </main>
 
-<footer>AI Token Usage Report</footer>
+<footer>Engineering Dashboard</footer>
 
 <script>
 // =========================================================================
