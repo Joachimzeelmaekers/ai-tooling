@@ -380,7 +380,8 @@ def _dedupe_reviews(reviews: list[Review]) -> list[Review]:
 
 def _load_reviews() -> list[Review]:
     now = datetime.now(timezone.utc)
-    all_windows = _generate_half_year_windows(2015, now)
+    from config import github_history_start_year
+    all_windows = _generate_half_year_windows(github_history_start_year(), now)
     # Filter to non-future windows
     all_windows = [w for w in all_windows if w.split("..")[0] <= now.strftime("%Y-%m-%d")]
 

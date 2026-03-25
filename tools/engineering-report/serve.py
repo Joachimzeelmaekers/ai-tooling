@@ -6,7 +6,8 @@ import os
 import sys
 import webbrowser
 
-PORT = int(os.environ.get("PORT", "9999"))
+from config import server_port
+PORT = server_port()
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.join(TOOL_DIR, "output")
 

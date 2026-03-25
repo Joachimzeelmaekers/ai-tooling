@@ -1,0 +1,16 @@
+{
+  "providers": {
+    "claude-code": { "enabled": true },
+    "opencode": { "enabled": false },
+    "cursor": { "enabled": false },
+    "codex": { "enabled": false }
+  },
+  "github": {
+    "enabled": true,
+    "history_start_year": 2020
+  },
+  "server": {
+    "port": 9999
+  },
+  "max_reports": 3
+}

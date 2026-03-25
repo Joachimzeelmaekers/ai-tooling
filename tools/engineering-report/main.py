@@ -16,22 +16,21 @@ from providers import github_prs
 from pricing import estimate_cost
 from report import build_html
 from cache import cached_load
+from config import is_provider_enabled, is_github_enabled, max_reports
 
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(os.path.dirname(TOOL_DIR))
 REPORTS_DIR = os.path.join(TOOL_DIR, "output")
 DATA_DIR = os.path.join(TOOL_DIR, "data")
-PRESENTATIONS_DIR = os.path.join(ROOT_DIR, "presentations")
 
 # Register providers here — (name, load_fn)
-PROVIDERS = [
+ALL_PROVIDERS = [
     ("claude-code", claude.load),
     ("opencode", opencode.load),
     ("cursor", cursor.load),
     ("codex", codex.load),
 ]
-
-MAX_REPORTS = 3
+PROVIDERS = [(name, fn) for name, fn in ALL_PROVIDERS if is_provider_enabled(name)]
 
 
 def fmt_tokens(n: int) -> str:
@@ -289,11 +288,12 @@ def snapshot_data(results: list[ProviderResult]):
 
 
 def _cleanup_reports(reports_dir: str):
-    """Keep only the latest MAX_REPORTS timestamped report files."""
+    """Keep only the latest N timestamped report files."""
     import glob as g
+    keep = max_reports()
     files = sorted(g.glob(os.path.join(reports_dir, "report_*.html")))
-    if len(files) > MAX_REPORTS:
-        for old in files[:-MAX_REPORTS]:
+    if len(files) > keep:
+        for old in files[:-keep]:
             os.remove(old)
             print(f"  Removed old report: {os.path.basename(old)}")
 
@@ -360,12 +360,15 @@ def main():
         for msg in result.messages
     ]
 
-    print("Loading GitHub PR data...")
-    gh_result = github_prs.load()
-    pr_stats = github_prs.compute_stats(gh_result)
-    data["github_prs"] = pr_stats
-    print(f"  GitHub PRs: {pr_stats['total']} total ({pr_stats['merged']} merged, {pr_stats['open']} open)")
-    print(f"  GitHub Reviews: {pr_stats['reviews']['total']} total")
+    if is_github_enabled():
+        print("Loading GitHub PR data...")
+        gh_result = github_prs.load()
+        pr_stats = github_prs.compute_stats(gh_result)
+        data["github_prs"] = pr_stats
+        print(f"  GitHub PRs: {pr_stats['total']} total ({pr_stats['merged']} merged, {pr_stats['open']} open)")
+        print(f"  GitHub Reviews: {pr_stats['reviews']['total']} total")
+    else:
+        print("GitHub provider disabled, skipping...")
 
 
     print("Generating HTML...")
