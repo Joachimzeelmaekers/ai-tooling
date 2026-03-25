@@ -39,7 +39,7 @@ def build_html(data: dict) -> str:
     model_stats = data["model_stats"]
     raw_messages = data.get("messages", [])
     provider_totals = data.get("provider_totals", {})
-    presentations = data.get("presentations", [])
+    github_prs = data.get("github_prs", {})
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -83,6 +83,7 @@ def build_html(data: dict) -> str:
     ])
 
     messages_js = json.dumps(raw_messages)
+    github_prs_js = json.dumps(github_prs)
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -600,9 +601,13 @@ def build_html(data: dict) -> str:
       <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h4l1 1h7v10H2V3zm0 5h12"/></svg>
       Projects
     </a>
-    <a class="nav-item" data-page="presentations">
-      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v1H2zm1 2h10v8H3zm2 9h6v1H5zm4-7H7v2h2z"/></svg>
-      Presentations
+    <a class="nav-item" data-page="pullrequests">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.25a2.25 2.25 0 114.5 0 2.25 2.25 0 01-4.5 0zM7.25 2a1.25 1.25 0 100 2.5 1.25 1.25 0 000-2.5zM3 11.75a2.25 2.25 0 114.5 0 2.25 2.25 0 01-4.5 0zM5.25 10.5a1.25 1.25 0 100 2.5 1.25 1.25 0 000-2.5zM10 11.75a2.25 2.25 0 114.5 0 2.25 2.25 0 01-4.5 0zM12.25 10.5a1.25 1.25 0 100 2.5 1.25 1.25 0 000-2.5zM7.25 5.5v5M5.25 10.5l2-5M12.25 10.5l-5-5"/></svg>
+      Pull Requests
+    </a>
+    <a class="nav-item" data-page="prdetails">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h5v5H2zm7 0h5v5H9zM2 9h5v5H2zm7 0h5v5H9z"/></svg>
+      PR Details
     </a>
   </nav>
   <div class="sidebar-footer">
@@ -783,14 +788,102 @@ def build_html(data: dict) -> str:
     </div>
   </div>
 
-  <!-- Presentations Page -->
-  <div class="page" id="page-presentations">
+  <!-- Pull Requests Page -->
+  <div class="page" id="page-pullrequests">
     <div class="page-header">
-      <h2>Presentations</h2>
-      <p>Internal presentation notes and talking points</p>
+      <h2>Pull Requests</h2>
+      <p>GitHub PR statistics across all repositories</p>
     </div>
-    <div class="section" id="presentationsList"></div>
+
+    <!-- Org filter -->
+    <div class="filter-bar" id="prOrgFilterBar">
+      <span class="filter-label">Org</span>
+      <select id="prOrgSelect" class="global-range" aria-label="Organization filter">
+        <option value="all" selected>All organizations</option>
+      </select>
+    </div>
+
+    <!-- PR summary cards -->
+    <div class="summary-grid" id="prSummaryCards"></div>
+
+    <!-- PRs over time chart -->
+    <div class="chart-card full">
+      <h3>PRs Over Time (by month)</h3>
+      <div class="chart-wrapper"><canvas id="prTimelineChart"></canvas></div>
+    </div>
+
+    <div class="chart-card full">
+      <h3>Avg PRs per Day Over Time (by month)</h3>
+      <div class="chart-wrapper"><canvas id="prAvgDayChart"></canvas></div>
+    </div>
+
+    <!-- Reviews section -->
+    <div class="summary-grid" id="reviewSummaryCards"></div>
+
+    <div class="chart-card full">
+      <h3>Reviews Over Time (by month)</h3>
+      <div class="chart-wrapper"><canvas id="reviewTimelineChart"></canvas></div>
+    </div>
   </div>
+
+  <!-- PR Details Page -->
+  <div class="page" id="page-prdetails">
+    <div class="page-header">
+      <h2>PR Details</h2>
+      <p>Size percentiles and per-repository breakdown</p>
+    </div>
+
+    <!-- Org filter (shared state with PR page) -->
+    <div class="filter-bar" id="prDetailsOrgFilterBar">
+      <span class="filter-label">Org</span>
+      <select id="prDetailsOrgSelect" class="global-range" aria-label="Organization filter">
+        <option value="all" selected>All organizations</option>
+      </select>
+    </div>
+
+    <!-- Size percentiles -->
+    <div class="section">
+      <div class="table-card">
+        <h3>PR Size Percentiles</h3>
+        <table id="prSizeTable">
+          <thead>
+            <tr>
+              <th data-type="string">Metric</th>
+              <th class="right" data-type="number">Avg</th>
+              <th class="right" data-type="number">P25</th>
+              <th class="right" data-type="number">P50</th>
+              <th class="right" data-type="number">P75</th>
+              <th class="right" data-type="number">P90</th>
+              <th class="right" data-type="number">P95</th>
+              <th class="right" data-type="number">P99</th>
+              <th class="right" data-type="number">Max</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PRs per project -->
+    <div class="section">
+      <div class="table-card">
+        <h3>PRs per Repository</h3>
+        <table class="sortable" id="prProjectTable">
+          <thead>
+            <tr>
+              <th data-type="string">Repository</th>
+              <th class="right" data-type="number">Total</th>
+              <th class="right" data-type="number">Merged</th>
+              <th class="right" data-type="number">Open</th>
+              <th class="right" data-type="number">Closed</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
 
   <div id="sessionDetailModal" class="session-detail" role="dialog" aria-modal="true" aria-label="Session details">
     <div class="session-detail-panel">
@@ -827,7 +920,7 @@ const ALL_MODELS = {models_js};
 const PROVIDERS = {providers_js};
 const RAW_MESSAGES = {messages_js};
 const PROVIDER_COLORS = {json.dumps(PROVIDER_COLORS)};
-const PRESENTATIONS = {json.dumps(presentations)};
+const GITHUB_PRS = {github_prs_js};
 
 // Model -> provider lookup
 const MODEL_PROVIDER = {{}};
@@ -1007,6 +1100,9 @@ function initNav() {{
       item.classList.add('active');
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       document.getElementById('page-' + page).classList.add('active');
+      // Hide token filter bar on pages that don't use it
+      const bar = document.querySelector('.filter-bar:not(#prOrgFilterBar):not(#prDetailsOrgFilterBar)');
+      if (bar) bar.style.display = ['pullrequests', 'prdetails'].includes(page) ? 'none' : '';
     }});
   }});
 }}
@@ -1647,6 +1743,359 @@ function inline(s) {{
 }}
 
 // =========================================================================
+// Pull Requests
+// =========================================================================
+let prTimelineChart = null;
+let prAvgDayChart = null;
+let reviewTimelineChart = null;
+let prOrgFilter = "all";
+
+function getFilteredPRs() {{
+  if (!GITHUB_PRS || !GITHUB_PRS.prs) return [];
+  if (prOrgFilter === "all") return GITHUB_PRS.prs;
+  return GITHUB_PRS.prs.filter(pr => (pr.org || "personal") === prOrgFilter);
+}}
+
+function computePRStats(prs) {{
+  const total = prs.length;
+  const merged = prs.filter(p => p.state === "MERGED").length;
+  const open = prs.filter(p => p.state === "OPEN").length;
+  const closed = prs.filter(p => p.state === "CLOSED").length;
+
+  const perProject = {{}};
+  prs.forEach(pr => {{
+    if (!perProject[pr.repo]) perProject[pr.repo] = {{ total: 0, merged: 0, open: 0, closed: 0 }};
+    perProject[pr.repo].total++;
+    if (pr.state === "MERGED") perProject[pr.repo].merged++;
+    else if (pr.state === "OPEN") perProject[pr.repo].open++;
+    else perProject[pr.repo].closed++;
+  }});
+
+  const perOrg = {{}};
+  prs.forEach(pr => {{
+    const org = pr.org || "personal";
+    if (!perOrg[org]) perOrg[org] = {{ total: 0, merged: 0, dates: new Set(), workday_prs: 0, weekend_prs: 0 }};
+    perOrg[org].total++;
+    if (pr.state === "MERGED") perOrg[org].merged++;
+    if (pr.created_at) {{
+      perOrg[org].dates.add(pr.created_at.slice(0, 10));
+      const d = new Date(pr.created_at);
+      if (d.getUTCDay() >= 1 && d.getUTCDay() <= 5) perOrg[org].workday_prs++;
+      else perOrg[org].weekend_prs++;
+    }}
+  }});
+
+  const orgStats = {{}};
+  const today = new Date();
+  for (const [org, data] of Object.entries(perOrg)) {{
+    const dates = Array.from(data.dates).sort();
+    if (!dates.length) {{
+      orgStats[org] = {{ total: data.total, merged: data.merged, workday_prs: 0, weekend_prs: 0, working_days: 0, weekend_days: 0, avg_per_working_day: 0, avg_per_weekend_day: 0 }};
+      continue;
+    }}
+    const first = new Date(dates[0] + "T00:00:00Z");
+    const last = new Date(Math.min(new Date(dates[dates.length - 1] + "T00:00:00Z").getTime(), today.getTime()));
+    let wd = 0, we = 0;
+    for (let d = new Date(first); d <= last; d.setUTCDate(d.getUTCDate() + 1)) {{
+      const dow = d.getUTCDay();
+      if (dow >= 1 && dow <= 5) wd++; else we++;
+    }}
+    orgStats[org] = {{
+      total: data.total, merged: data.merged,
+      workday_prs: data.workday_prs, weekend_prs: data.weekend_prs,
+      working_days: wd, weekend_days: we,
+      avg_per_working_day: wd > 0 ? +(data.workday_prs / wd).toFixed(2) : 0,
+      avg_per_weekend_day: we > 0 ? +(data.weekend_prs / we).toFixed(2) : 0,
+    }};
+  }}
+
+  const sizes = prs.map(p => p.additions + p.deletions).sort((a, b) => a - b);
+  const adds = prs.map(p => p.additions).sort((a, b) => a - b);
+  const dels = prs.map(p => p.deletions).sort((a, b) => a - b);
+  const files = prs.map(p => p.changed_files).sort((a, b) => a - b);
+
+  function pct(arr, p) {{
+    if (!arr.length) return 0;
+    const k = (arr.length - 1) * (p / 100);
+    const f = Math.floor(k);
+    const c = Math.min(f + 1, arr.length - 1);
+    return Math.round(arr[f] + (k - f) * (arr[c] - arr[f]));
+  }}
+  function avg(arr) {{ return arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0; }}
+
+  const sizeStats = {{
+    lines_changed: {{ p25: pct(sizes,25), p50: pct(sizes,50), p75: pct(sizes,75), p90: pct(sizes,90), p95: pct(sizes,95), p99: pct(sizes,99), avg: avg(sizes), max: sizes.length ? sizes[sizes.length-1] : 0 }},
+    additions: {{ p50: pct(adds,50), p90: pct(adds,90), p95: pct(adds,95), avg: avg(adds) }},
+    deletions: {{ p50: pct(dels,50), p90: pct(dels,90), p95: pct(dels,95), avg: avg(dels) }},
+    files_changed: {{ p50: pct(files,50), p90: pct(files,90), p95: pct(files,95), avg: avg(files) }},
+  }};
+
+  const byMonth = {{}};
+  prs.forEach(pr => {{
+    if (pr.created_at) {{
+      const m = pr.created_at.slice(0, 7);
+      byMonth[m] = (byMonth[m] || 0) + 1;
+    }}
+  }});
+
+  return {{ total, merged, open, closed, perProject, orgStats, sizeStats, byMonth }};
+}}
+
+function initPROrgFilter() {{
+  if (!GITHUB_PRS || !GITHUB_PRS.per_org) return;
+
+  const selects = [document.getElementById("prOrgSelect"), document.getElementById("prDetailsOrgSelect")].filter(Boolean);
+  const orgs = Object.keys(GITHUB_PRS.per_org).sort((a, b) => (GITHUB_PRS.per_org[b]?.total || 0) - (GITHUB_PRS.per_org[a]?.total || 0));
+
+  selects.forEach(select => {{
+    orgs.forEach(org => {{
+      const opt = document.createElement("option");
+      opt.value = org;
+      opt.textContent = `${{org}} (${{GITHUB_PRS.per_org[org]?.total || 0}})`;
+      select.appendChild(opt);
+    }});
+
+    select.addEventListener("change", () => {{
+      prOrgFilter = select.value;
+      // Sync both selects
+      selects.forEach(s => {{ if (s !== select) s.value = prOrgFilter; }});
+      renderPRPage();
+    }});
+  }});
+}}
+
+function renderPRPage() {{
+  if (!GITHUB_PRS || !GITHUB_PRS.total) return;
+
+  const prs = getFilteredPRs();
+  const stats = computePRStats(prs);
+
+  // Summary cards
+  const cards = document.getElementById("prSummaryCards");
+  if (cards) {{
+    cards.innerHTML = `
+      <div class="card"><div class="label">Total PRs</div><div class="value">${{fmtCompact(stats.total)}}</div><div class="sub">${{fmtNum(stats.total)}} pull requests</div></div>
+      <div class="card"><div class="label">Merged</div><div class="value" style="color:#6f8b6e">${{fmtCompact(stats.merged)}}</div><div class="sub">${{(stats.total > 0 ? (stats.merged / stats.total * 100).toFixed(1) : 0)}}% merge rate</div></div>
+      <div class="card"><div class="label">Open</div><div class="value" style="color:#b88a5a">${{fmtCompact(stats.open)}}</div><div class="sub">currently open</div></div>
+      <div class="card"><div class="label">Closed (unmerged)</div><div class="value" style="color:#8b6f9b">${{fmtCompact(stats.closed)}}</div><div class="sub">closed without merge</div></div>
+      <div class="card"><div class="label">Repositories</div><div class="value" style="color:#d97757">${{Object.keys(stats.perProject).length}}</div><div class="sub">unique repos</div></div>
+      <div class="card"><div class="label">Organizations</div><div class="value" style="color:#4f7f78">${{Object.keys(stats.orgStats).length}}</div><div class="sub">unique orgs</div></div>
+      <div class="card"><div class="label">Median Size</div><div class="value" style="color:#9f7a4f">${{fmtCompact(stats.sizeStats.lines_changed.p50)}}</div><div class="sub">lines changed (P50)</div></div>
+      <div class="card"><div class="label">P90 Size</div><div class="value" style="color:#b35f5f">${{fmtCompact(stats.sizeStats.lines_changed.p90)}}</div><div class="sub">lines changed (P90)</div></div>`;
+
+    // Add workday/weekend averages from orgStats
+    const allOrgs = Object.values(stats.orgStats);
+    const totalWdPrs = allOrgs.reduce((s, o) => s + (o.workday_prs || 0), 0);
+    const totalWePrs = allOrgs.reduce((s, o) => s + (o.weekend_prs || 0), 0);
+    const totalWd = allOrgs.reduce((s, o) => s + (o.working_days || 0), 0);
+    const totalWe = allOrgs.reduce((s, o) => s + (o.weekend_days || 0), 0);
+    const avgWd = totalWd > 0 ? (totalWdPrs / totalWd).toFixed(2) : "0";
+    const avgWe = totalWe > 0 ? (totalWePrs / totalWe).toFixed(2) : "0";
+
+    cards.innerHTML += `
+      <div class="card"><div class="label">Workday PRs</div><div class="value" style="color:#6f8b6e">${{fmtNum(totalWdPrs)}}</div><div class="sub">${{avgWd}} avg/workday</div></div>
+      <div class="card"><div class="label">Weekend PRs</div><div class="value" style="color:#8b6f9b">${{fmtNum(totalWePrs)}}</div><div class="sub">${{avgWe}} avg/weekend day</div></div>
+    `;
+  }}
+
+  // Size percentiles table
+  const sizeBody = document.querySelector("#prSizeTable tbody");
+  if (sizeBody) {{
+    const ss = stats.sizeStats;
+    const rows = [
+      ["Lines Changed (add+del)", ss.lines_changed],
+      ["Additions", ss.additions],
+      ["Deletions", ss.deletions],
+      ["Files Changed", ss.files_changed],
+    ];
+    sizeBody.innerHTML = rows.map(([label, s]) => {{
+      if (!s) return "";
+      return `<tr>
+        <td>${{label}}</td>
+        <td class="mono right" data-sort="${{s.avg || 0}}">${{fmtNum(s.avg || 0)}}</td>
+        <td class="mono right" data-sort="${{s.p25 || 0}}">${{fmtNum(s.p25 || 0)}}</td>
+        <td class="mono right" data-sort="${{s.p50 || 0}}">${{fmtNum(s.p50 || 0)}}</td>
+        <td class="mono right" data-sort="${{s.p75 || 0}}">${{fmtNum(s.p75 || 0)}}</td>
+        <td class="mono right" data-sort="${{s.p90 || 0}}">${{fmtNum(s.p90 || 0)}}</td>
+        <td class="mono right" data-sort="${{s.p95 || 0}}">${{fmtNum(s.p95 || 0)}}</td>
+        <td class="mono right" data-sort="${{s.p99 || 0}}">${{fmtNum(s.p99 || 0)}}</td>
+        <td class="mono right" data-sort="${{s.max || 0}}">${{fmtNum(s.max || 0)}}</td>
+      </tr>`;
+    }}).join("");
+  }}
+
+  // Per-project table
+  const projBody = document.querySelector("#prProjectTable tbody");
+  if (projBody) {{
+    const projects = Object.entries(stats.perProject).sort((a, b) => b[1].total - a[1].total);
+    projBody.innerHTML = projects.map(([repo, s]) => `<tr>
+      <td class="mono">${{repo}}</td>
+      <td class="mono right" data-sort="${{s.total}}">${{fmtNum(s.total)}}</td>
+      <td class="mono right" data-sort="${{s.merged}}">${{fmtNum(s.merged)}}</td>
+      <td class="mono right" data-sort="${{s.open}}">${{fmtNum(s.open)}}</td>
+      <td class="mono right" data-sort="${{s.closed}}">${{fmtNum(s.closed)}}</td>
+    </tr>`).join("");
+  }}
+
+  // Timeline chart
+  const months = Object.keys(stats.byMonth).sort();
+  const counts = months.map(m => stats.byMonth[m]);
+  if (prTimelineChart) prTimelineChart.destroy();
+  if (months.length) {{
+    prTimelineChart = new Chart(document.getElementById("prTimelineChart"), {{
+      type: "bar",
+      data: {{
+        labels: months,
+        datasets: [{{
+          label: "PRs Created",
+          data: counts,
+          backgroundColor: "#d97757cc",
+          borderRadius: 4,
+        }}],
+      }},
+      options: {{
+        ...chartDefaults,
+        scales: {{
+          x: {{ ticks: {{ color: "#a39e90", maxRotation: 45, minRotation: 25 }}, grid: {{ color: "#3d3b36" }} }},
+          y: {{ ticks: {{ color: "#a39e90", callback: v => Math.round(v) }}, grid: {{ color: "#3d3b36" }}, beginAtZero: true }},
+        }},
+      }},
+    }});
+  }}
+
+  // Avg PRs per workday/weekend day per month
+  if (prAvgDayChart) prAvgDayChart.destroy();
+  if (months.length) {{
+    // For each month, count workday PRs, weekend PRs, workdays, weekend days
+    const wdAvg = [];
+    const weAvg = [];
+    const rollingWd = [];
+    const today = new Date();
+
+    months.forEach(m => {{
+      const [y, mo] = m.split("-").map(Number);
+      // Get all days in this month (up to today if current month)
+      const firstDay = new Date(Date.UTC(y, mo - 1, 1));
+      const lastDay = new Date(Date.UTC(y, mo, 0)); // last day of month
+      const end = lastDay > today ? today : lastDay;
+
+      let wd = 0, we = 0, wdPrs = 0, wePrs = 0;
+      for (let d = new Date(firstDay); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {{
+        const dow = d.getUTCDay();
+        if (dow >= 1 && dow <= 5) wd++; else we++;
+      }}
+
+      prs.forEach(pr => {{
+        if (!pr.created_at || pr.created_at.slice(0, 7) !== m) return;
+        const dow = new Date(pr.created_at).getUTCDay();
+        if (dow >= 1 && dow <= 5) wdPrs++; else wePrs++;
+      }});
+
+      wdAvg.push(wd > 0 ? +(wdPrs / wd).toFixed(2) : 0);
+      weAvg.push(we > 0 ? +(wePrs / we).toFixed(2) : 0);
+    }});
+
+    // 3-month rolling average for workday
+    for (let i = 0; i < wdAvg.length; i++) {{
+      const window = wdAvg.slice(Math.max(0, i - 2), i + 1);
+      rollingWd.push(+(window.reduce((a, b) => a + b, 0) / window.length).toFixed(2));
+    }}
+
+    prAvgDayChart = new Chart(document.getElementById("prAvgDayChart"), {{
+      type: "bar",
+      data: {{
+        labels: months,
+        datasets: [
+          {{
+            label: "Avg PRs / Workday",
+            data: wdAvg,
+            backgroundColor: "#6f8b6eaa",
+            borderRadius: 4,
+            order: 2,
+          }},
+          {{
+            label: "Avg PRs / Weekend Day",
+            data: weAvg,
+            backgroundColor: "#8b6f9baa",
+            borderRadius: 4,
+            order: 3,
+          }},
+          {{
+            label: "3-month Rolling Avg (Workday)",
+            data: rollingWd,
+            type: "line",
+            borderColor: "#d97757",
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.3,
+            fill: false,
+            order: 1,
+          }},
+        ],
+      }},
+      options: {{
+        ...chartDefaults,
+        scales: {{
+          x: {{ ticks: {{ color: "#a39e90", maxRotation: 45, minRotation: 25 }}, grid: {{ color: "#3d3b36" }} }},
+          y: {{ ticks: {{ color: "#a39e90" }}, grid: {{ color: "#3d3b36" }}, beginAtZero: true }},
+        }},
+      }},
+    }});
+  }}
+
+  // Reviews section
+  const reviews = GITHUB_PRS.reviews || {{}};
+  const allReviews = reviews.reviews || [];
+  // Filter reviews by org
+  const filteredReviews = prOrgFilter === "all" ? allReviews : allReviews.filter(r => (r.org || "personal") === prOrgFilter);
+  const reviewTotal = filteredReviews.length;
+  const reviewByState = {{}};
+  filteredReviews.forEach(r => {{ reviewByState[r.state] = (reviewByState[r.state] || 0) + 1; }});
+
+  const reviewCards = document.getElementById("reviewSummaryCards");
+  if (reviewCards) {{
+    reviewCards.innerHTML = `
+      <div class="card"><div class="label">Total Reviews</div><div class="value">${{fmtCompact(reviewTotal)}}</div><div class="sub">${{fmtNum(reviewTotal)}} reviews given</div></div>
+      <div class="card"><div class="label">Approved</div><div class="value" style="color:#6f8b6e">${{fmtCompact(reviewByState["APPROVED"] || 0)}}</div><div class="sub">${{reviewTotal > 0 ? ((reviewByState["APPROVED"] || 0) / reviewTotal * 100).toFixed(1) : 0}}%</div></div>
+      <div class="card"><div class="label">Commented</div><div class="value" style="color:#b88a5a">${{fmtCompact(reviewByState["COMMENTED"] || 0)}}</div><div class="sub">${{reviewTotal > 0 ? ((reviewByState["COMMENTED"] || 0) / reviewTotal * 100).toFixed(1) : 0}}%</div></div>
+      <div class="card"><div class="label">Changes Requested</div><div class="value" style="color:#d97757">${{fmtCompact(reviewByState["CHANGES_REQUESTED"] || 0)}}</div><div class="sub">${{reviewTotal > 0 ? ((reviewByState["CHANGES_REQUESTED"] || 0) / reviewTotal * 100).toFixed(1) : 0}}%</div></div>
+    `;
+  }}
+
+  // Reviews timeline
+  if (reviewTimelineChart) reviewTimelineChart.destroy();
+  const reviewByMonth = {{}};
+  filteredReviews.forEach(r => {{
+    if (r.review_created_at) {{
+      const m = r.review_created_at.slice(0, 7);
+      reviewByMonth[m] = (reviewByMonth[m] || 0) + 1;
+    }}
+  }});
+  const revMonths = Object.keys(reviewByMonth).sort();
+  if (revMonths.length) {{
+    reviewTimelineChart = new Chart(document.getElementById("reviewTimelineChart"), {{
+      type: "bar",
+      data: {{
+        labels: revMonths,
+        datasets: [{{
+          label: "Reviews Given",
+          data: revMonths.map(m => reviewByMonth[m]),
+          backgroundColor: "#4f7f78cc",
+          borderRadius: 4,
+        }}],
+      }},
+      options: {{
+        ...chartDefaults,
+        scales: {{
+          x: {{ ticks: {{ color: "#a39e90", maxRotation: 45, minRotation: 25 }}, grid: {{ color: "#3d3b36" }} }},
+          y: {{ ticks: {{ color: "#a39e90", callback: v => Math.round(v) }}, grid: {{ color: "#3d3b36" }}, beginAtZero: true }},
+        }},
+      }},
+    }});
+  }}
+}}
+
+// =========================================================================
 // Render all
 // =========================================================================
 function renderAll() {{
@@ -1659,7 +2108,7 @@ function renderAll() {{
   renderSessionTable();
   renderModelTable();
   renderProjectTable();
-  renderPresentations();
+  renderPRPage();
 }}
 
 // =========================================================================
@@ -1667,6 +2116,7 @@ function renderAll() {{
 // =========================================================================
 initNav();
 initFilterBar();
+initPROrgFilter();
 initSortable();
 initLookbackSelect();
 initAnalyzeButton();

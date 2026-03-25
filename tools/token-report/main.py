@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from providers.base import ProviderResult
 from providers import opencode, claude, cursor, codex
+from providers import github_prs
 from pricing import estimate_cost
 from report import build_html
 from cache import cached_load
@@ -360,10 +361,13 @@ def main():
         for msg in result.messages
     ]
 
-    presentations = load_presentations()
-    data["presentations"] = presentations
-    if presentations:
-        print(f"  Loaded {len(presentations)} presentation(s)")
+    print("Loading GitHub PR data...")
+    gh_result = github_prs.load()
+    pr_stats = github_prs.compute_stats(gh_result)
+    data["github_prs"] = pr_stats
+    print(f"  GitHub PRs: {pr_stats['total']} total ({pr_stats['merged']} merged, {pr_stats['open']} open)")
+    print(f"  GitHub Reviews: {pr_stats['reviews']['total']} total")
+
 
     print("Generating HTML...")
     html = build_html(data)
