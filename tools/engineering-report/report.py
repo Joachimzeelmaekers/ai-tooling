@@ -813,8 +813,13 @@ def build_html(data: dict) -> str:
     </div>
 
     <div class="chart-card full">
-      <h3>Avg PRs per Day Over Time (by month)</h3>
+      <h3>Avg Merged PRs per Day (by month)</h3>
       <div class="chart-wrapper"><canvas id="prAvgDayChart"></canvas></div>
+    </div>
+
+    <div class="chart-card full">
+      <h3>Avg Time to Merge (by month)</h3>
+      <div class="chart-wrapper"><canvas id="prTimeToMergeChart"></canvas></div>
     </div>
 
     <!-- Reviews section -->
@@ -1747,6 +1752,7 @@ function inline(s) {{
 // =========================================================================
 let prTimelineChart = null;
 let prAvgDayChart = null;
+let prTimeToMergeChart = null;
 let reviewTimelineChart = null;
 let prOrgFilter = "all";
 
@@ -1776,12 +1782,14 @@ function computePRStats(prs) {{
     const org = pr.org || "personal";
     if (!perOrg[org]) perOrg[org] = {{ total: 0, merged: 0, dates: new Set(), workday_prs: 0, weekend_prs: 0 }};
     perOrg[org].total++;
-    if (pr.state === "MERGED") perOrg[org].merged++;
-    if (pr.created_at) {{
-      perOrg[org].dates.add(pr.created_at.slice(0, 10));
-      const d = new Date(pr.created_at);
-      if (d.getUTCDay() >= 1 && d.getUTCDay() <= 5) perOrg[org].workday_prs++;
-      else perOrg[org].weekend_prs++;
+    if (pr.state === "MERGED") {{
+      perOrg[org].merged++;
+      if (pr.created_at) {{
+        perOrg[org].dates.add(pr.created_at.slice(0, 10));
+        const d = new Date(pr.created_at);
+        if (d.getUTCDay() >= 1 && d.getUTCDay() <= 5) perOrg[org].workday_prs++;
+        else perOrg[org].weekend_prs++;
+      }}
     }}
   }});
 
@@ -1834,11 +1842,25 @@ function computePRStats(prs) {{
   prs.forEach(pr => {{
     if (pr.created_at) {{
       const m = pr.created_at.slice(0, 7);
-      byMonth[m] = (byMonth[m] || 0) + 1;
+      if (!byMonth[m]) byMonth[m] = {{ total: 0, merged: 0, open: 0, closed: 0 }};
+      byMonth[m].total++;
+      if (pr.state === "MERGED") byMonth[m].merged++;
+      else if (pr.state === "OPEN") byMonth[m].open++;
+      else byMonth[m].closed++;
     }}
   }});
 
-  return {{ total, merged, open, closed, perProject, orgStats, sizeStats, byMonth }};
+  const mergeTimes = prs
+    .filter(pr => pr.state === "MERGED" && pr.created_at && pr.merged_at)
+    .map(pr => (new Date(pr.merged_at) - new Date(pr.created_at)) / (1000 * 60 * 60))
+    .sort((a, b) => a - b);
+  const mergeTimeStats = {{
+    avg: avg(mergeTimes.map(h => Math.round(h))),
+    p50: pct(mergeTimes.map(h => Math.round(h)), 50),
+    p90: pct(mergeTimes.map(h => Math.round(h)), 90),
+  }};
+
+  return {{ total, merged, open, closed, perProject, orgStats, sizeStats, byMonth, mergeTimeStats }};
 }}
 
 function initPROrgFilter() {{
@@ -1892,9 +1914,17 @@ function renderPRPage() {{
     const avgWd = totalWd > 0 ? (totalWdPrs / totalWd).toFixed(2) : "0";
     const avgWe = totalWe > 0 ? (totalWePrs / totalWe).toFixed(2) : "0";
 
+    function fmtMergeTime(h) {{
+      if (!h) return "N/A";
+      if (h < 24) return h + "h";
+      return (h / 24).toFixed(1) + "d";
+    }}
+
     cards.innerHTML += `
-      <div class="card"><div class="label">Workday PRs</div><div class="value" style="color:#6f8b6e">${{fmtNum(totalWdPrs)}}</div><div class="sub">${{avgWd}} avg/workday</div></div>
-      <div class="card"><div class="label">Weekend PRs</div><div class="value" style="color:#8b6f9b">${{fmtNum(totalWePrs)}}</div><div class="sub">${{avgWe}} avg/weekend day</div></div>
+      <div class="card"><div class="label">Workday Merges</div><div class="value" style="color:#6f8b6e">${{fmtNum(totalWdPrs)}}</div><div class="sub">${{avgWd}} avg/workday</div></div>
+      <div class="card"><div class="label">Weekend Merges</div><div class="value" style="color:#8b6f9b">${{fmtNum(totalWePrs)}}</div><div class="sub">${{avgWe}} avg/weekend day</div></div>
+      <div class="card"><div class="label">Median Time to Merge</div><div class="value" style="color:#4f7f78">${{fmtMergeTime(stats.mergeTimeStats.p50)}}</div><div class="sub">P50 merge time</div></div>
+      <div class="card"><div class="label">P90 Time to Merge</div><div class="value" style="color:#d97757">${{fmtMergeTime(stats.mergeTimeStats.p90)}}</div><div class="sub">P90 merge time</div></div>
     `;
   }}
 
@@ -1939,25 +1969,33 @@ function renderPRPage() {{
 
   // Timeline chart
   const months = Object.keys(stats.byMonth).sort();
-  const counts = months.map(m => stats.byMonth[m]);
   if (prTimelineChart) prTimelineChart.destroy();
   if (months.length) {{
     prTimelineChart = new Chart(document.getElementById("prTimelineChart"), {{
       type: "bar",
       data: {{
         labels: months,
-        datasets: [{{
-          label: "PRs Created",
-          data: counts,
-          backgroundColor: "#d97757cc",
-          borderRadius: 4,
-        }}],
+        datasets: [
+          {{
+            label: "Merged",
+            data: months.map(m => stats.byMonth[m].merged),
+            backgroundColor: "#6f8b6ecc",
+            borderRadius: 2,
+          }},
+          {{
+            label: "Open",
+            data: months.map(m => stats.byMonth[m].open),
+            backgroundColor: "#b88a5acc",
+            borderRadius: 2,
+          }},
+        ],
       }},
       options: {{
         ...chartDefaults,
+        plugins: {{ ...chartDefaults.plugins, legend: {{ display: true, labels: {{ color: "#a39e90" }} }} }},
         scales: {{
-          x: {{ ticks: {{ color: "#a39e90", maxRotation: 45, minRotation: 25 }}, grid: {{ color: "#3d3b36" }} }},
-          y: {{ ticks: {{ color: "#a39e90", callback: v => Math.round(v) }}, grid: {{ color: "#3d3b36" }}, beginAtZero: true }},
+          x: {{ stacked: true, ticks: {{ color: "#a39e90", maxRotation: 45, minRotation: 25 }}, grid: {{ color: "#3d3b36" }} }},
+          y: {{ stacked: true, ticks: {{ color: "#a39e90", callback: v => Math.round(v) }}, grid: {{ color: "#3d3b36" }}, beginAtZero: true }},
         }},
       }},
     }});
@@ -1986,7 +2024,7 @@ function renderPRPage() {{
       }}
 
       prs.forEach(pr => {{
-        if (!pr.created_at || pr.created_at.slice(0, 7) !== m) return;
+        if (pr.state !== "MERGED" || !pr.created_at || pr.created_at.slice(0, 7) !== m) return;
         const dow = new Date(pr.created_at).getUTCDay();
         if (dow >= 1 && dow <= 5) wdPrs++; else wePrs++;
       }});
@@ -2007,14 +2045,14 @@ function renderPRPage() {{
         labels: months,
         datasets: [
           {{
-            label: "Avg PRs / Workday",
+            label: "Avg Merged PRs / Workday",
             data: wdAvg,
             backgroundColor: "#6f8b6eaa",
             borderRadius: 4,
             order: 2,
           }},
           {{
-            label: "Avg PRs / Weekend Day",
+            label: "Avg Merged PRs / Weekend Day",
             data: weAvg,
             backgroundColor: "#8b6f9baa",
             borderRadius: 4,
@@ -2038,6 +2076,84 @@ function renderPRPage() {{
         scales: {{
           x: {{ ticks: {{ color: "#a39e90", maxRotation: 45, minRotation: 25 }}, grid: {{ color: "#3d3b36" }} }},
           y: {{ ticks: {{ color: "#a39e90" }}, grid: {{ color: "#3d3b36" }}, beginAtZero: true }},
+        }},
+      }},
+    }});
+  }}
+
+  // Avg time to merge chart
+  if (prTimeToMergeChart) prTimeToMergeChart.destroy();
+  if (months.length) {{
+    const mergeTimeByMonth = {{}};
+    prs.forEach(pr => {{
+      if (pr.state !== "MERGED" || !pr.created_at || !pr.merged_at) return;
+      const m = pr.created_at.slice(0, 7);
+      if (!mergeTimeByMonth[m]) mergeTimeByMonth[m] = [];
+      const hours = (new Date(pr.merged_at) - new Date(pr.created_at)) / (1000 * 60 * 60);
+      mergeTimeByMonth[m].push(hours);
+    }});
+
+    const avgMergeHours = months.map(m => {{
+      const times = mergeTimeByMonth[m];
+      if (!times || !times.length) return null;
+      return +(times.reduce((a, b) => a + b, 0) / times.length).toFixed(1);
+    }});
+    const medianMergeHours = months.map(m => {{
+      const times = mergeTimeByMonth[m];
+      if (!times || !times.length) return null;
+      times.sort((a, b) => a - b);
+      const mid = Math.floor(times.length / 2);
+      const val = times.length % 2 ? times[mid] : (times[mid - 1] + times[mid]) / 2;
+      return +val.toFixed(1);
+    }});
+
+    function fmtHours(h) {{
+      if (h === null || h === undefined) return "N/A";
+      if (h < 24) return h.toFixed(1) + "h";
+      return (h / 24).toFixed(1) + "d";
+    }}
+
+    prTimeToMergeChart = new Chart(document.getElementById("prTimeToMergeChart"), {{
+      type: "bar",
+      data: {{
+        labels: months,
+        datasets: [
+          {{
+            label: "Avg Time to Merge",
+            data: avgMergeHours,
+            backgroundColor: "#d97757aa",
+            borderRadius: 4,
+            order: 2,
+          }},
+          {{
+            label: "Median Time to Merge",
+            data: medianMergeHours,
+            type: "line",
+            borderColor: "#6f8b6e",
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: "#6f8b6e",
+            tension: 0.3,
+            fill: false,
+            order: 1,
+          }},
+        ],
+      }},
+      options: {{
+        ...chartDefaults,
+        plugins: {{
+          ...chartDefaults.plugins,
+          tooltip: {{
+            callbacks: {{
+              label: function(ctx) {{
+                return ctx.dataset.label + ": " + fmtHours(ctx.raw);
+              }}
+            }}
+          }}
+        }},
+        scales: {{
+          x: {{ ticks: {{ color: "#a39e90", maxRotation: 45, minRotation: 25 }}, grid: {{ color: "#3d3b36" }} }},
+          y: {{ ticks: {{ color: "#a39e90", callback: v => fmtHours(v) }}, grid: {{ color: "#3d3b36" }}, beginAtZero: true }},
         }},
       }},
     }});
