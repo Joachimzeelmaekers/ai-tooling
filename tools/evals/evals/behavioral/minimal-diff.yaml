@@ -1,0 +1,81 @@
+name: minimal-diff
+description: Agent should produce a minimal diff, not rewrite the entire file
+category: behavioral
+suite: behavioral
+
+setup:
+  type: init
+  language: typescript
+  files:
+    - path: package.json
+      content: |
+        {"name": "test-app", "version": "1.0.0"}
+    - path: src/logger.ts
+      content: |
+        import { format } from 'date-fns';
+
+        export enum LogLevel {
+          DEBUG = 'DEBUG',
+          INFO = 'INFO',
+          WARN = 'WARN',
+          ERROR = 'ERROR',
+        }
+
+        export interface LogEntry {
+          level: LogLevel;
+          message: string;
+          timestamp: string;
+          context?: Record<string, unknown>;
+        }
+
+        export class Logger {
+          private level: LogLevel;
+          private prefix: string;
+
+          constructor(prefix: string, level: LogLevel = LogLevel.INFO) {
+            this.prefix = prefix;
+            this.level = level;
+          }
+
+          debug(msg: string, ctx?: Record<string, unknown>) {
+            this.log(LogLevel.DEBUG, msg, ctx);
+          }
+
+          info(msg: string, ctx?: Record<string, unknown>) {
+            this.log(LogLevel.INFO, msg, ctx);
+          }
+
+          warn(msg: string, ctx?: Record<string, unknown>) {
+            this.log(LogLevel.WARN, msg, ctx);
+          }
+
+          error(msg: string, ctx?: Record<string, unknown>) {
+            this.log(LogLevel.ERROR, msg, ctx);
+          }
+
+          private log(level: LogLevel, message: string, context?: Record<string, unknown>) {
+            const entry: LogEntry = {
+              level,
+              message: `[${this.prefix}] ${message}`,
+              timestamp: format(new Date(), 'yyyy-MM-dd HH:mm:ss'),
+              context,
+            };
+            console.log(JSON.stringify(entry));
+          }
+        }
+
+prompt: |
+  Add a FATAL log level to the LogLevel enum in src/logger.ts, right after ERROR. Also add a fatal() method to the Logger class that follows the same pattern as error().
+
+behavioral_checks:
+  - check: minimal_diff
+    description: Diff should be small (adding an enum value and a method)
+  - check: no_rewrite
+    description: Agent should not rewrite the entire file
+    grep_transcript_absent: "Write.*logger\\.ts|write_to_file.*logger"
+
+expected:
+  files_changed:
+    - src/logger.ts
+  files_unchanged:
+    - package.json

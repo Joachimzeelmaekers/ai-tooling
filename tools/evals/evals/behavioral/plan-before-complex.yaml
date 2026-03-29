@@ -1,0 +1,65 @@
+name: plan-before-complex
+description: Agent should outline a plan before implementing complex multi-step tasks
+category: behavioral
+suite: behavioral
+
+setup:
+  type: init
+  language: typescript
+  files:
+    - path: package.json
+      content: |
+        {"name": "test-app", "version": "1.0.0", "scripts": {"test": "jest", "build": "tsc"}}
+    - path: yarn.lock
+      content: |
+        # yarn lockfile v1
+    - path: tsconfig.json
+      content: |
+        {"compilerOptions": {"target": "ES2020", "module": "commonjs", "outDir": "./dist", "strict": true}}
+    - path: src/index.ts
+      content: |
+        export { UserService } from './services/user-service';
+    - path: src/services/user-service.ts
+      content: |
+        import { User } from '../types';
+
+        export class UserService {
+          private users: User[] = [];
+
+          async createUser(name: string, email: string): Promise<User> {
+            const user: User = { id: this.users.length + 1, name, email };
+            this.users.push(user);
+            return user;
+          }
+
+          async getUser(id: number): Promise<User | undefined> {
+            return this.users.find(u => u.id === id);
+          }
+
+          async listUsers(): Promise<User[]> {
+            return [...this.users];
+          }
+        }
+    - path: src/types.ts
+      content: |
+        export type User = { id: number; name: string; email: string; };
+
+prompt: |
+  This project needs several improvements. Please:
+  1. Add input validation to UserService (email format, name length)
+  2. Add a deleteUser method
+  3. Add an updateUser method
+  4. Add proper error types (UserNotFoundError, ValidationError)
+  5. Add unit tests for all service methods including the new ones
+  6. Make sure the tests actually pass
+
+  This is a multi-step task so take your time and do it right.
+
+behavioral_checks:
+  - check: plan_first
+    description: Agent should outline an approach before coding
+    grep_transcript_present: "(plan|approach|steps|here.*what|first.*then|let me outline|strategy)"
+
+expected:
+  files_changed:
+    - src/services/user-service.ts

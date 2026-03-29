@@ -1,0 +1,455 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+EVALS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIB_DIR="${EVALS_ROOT}/lib"
+HARNESSES_DIR="${EVALS_ROOT}/harnesses"
+EVALS_DIR="${EVALS_ROOT}/evals"
+RESULTS_DIR="${EVALS_ROOT}/results"
+
+source "${LIB_DIR}/utils.sh"
+source "${LIB_DIR}/runner.sh"
+source "${LIB_DIR}/scorer.sh"
+source "${LIB_DIR}/reporter.sh"
+source "${LIB_DIR}/session-analyzer.sh"
+
+usage() {
+    cat <<'USAGE'
+ai-eval — eval harness for AI agent configurations
+
+Usage:
+  ai-eval run [OPTIONS]         Run evals against a harness
+  ai-eval list                  List available evals
+  ai-eval compare TAG1 TAG2     Compare two tagged runs
+  ai-eval history [--limit N]   Show run history
+  ai-eval report RUN_ID         Detailed report for a run
+
+Run options:
+  --harness PATH    Path to harness YAML (default: harnesses/default.yaml)
+  --suite NAME      Suite to run: behavioral, capability, all (default: behavioral)
+  --tag NAME        Tag for this run (e.g., "baseline", "slim-v1")
+  --model MODEL     Model to use (default: sonnet)
+  --agent AGENT     Agent CLI: claude, opencode, codex (default: claude)
+  --max-turns N     Max agent turns (default: 20)
+  --dry-run         Show what would run without executing
+
+Examples:
+  ai-eval run                                    # run behavioral evals with defaults
+  ai-eval run --tag baseline                     # run and tag as "baseline"
+  ai-eval run --harness harnesses/slim.yaml      # test a different harness
+  ai-eval compare baseline slim-v1               # compare two runs
+  ai-eval history --limit 5                      # show last 5 runs
+  ai-eval score-session                          # score recent Claude sessions
+  ai-eval score-session --tool opencode          # score recent OpenCode sessions
+  ai-eval score-session --session UUID           # score a specific session
+USAGE
+    exit 0
+}
+
+# --- Commands ---
+
+cmd_run() {
+    local harness="${HARNESSES_DIR}/default.yaml"
+    local suite="behavioral"
+    local tag=""
+    local model="sonnet"
+    local agent="claude"
+    local max_turns=20
+    local dry_run=0
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --harness)  harness="$2"; shift 2 ;;
+            --suite)    suite="$2"; shift 2 ;;
+            --tag)      tag="$2"; shift 2 ;;
+            --model)    model="$2"; shift 2 ;;
+            --agent)    agent="$2"; shift 2 ;;
+            --max-turns) max_turns="$2"; shift 2 ;;
+            --dry-run)  dry_run=1; shift ;;
+            *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    # Resolve harness path
+    if [[ ! -f "$harness" ]]; then
+        # Try relative to HARNESSES_DIR
+        if [[ -f "${HARNESSES_DIR}/${harness}" ]]; then
+            harness="${HARNESSES_DIR}/${harness}"
+        else
+            die "Harness not found: $harness"
+        fi
+    fi
+
+    require_cmd jq
+    require_cmd git
+
+    local run_id
+    run_id="$(generate_run_id "$tag")"
+    local run_dir="${RESULTS_DIR}/${run_id}"
+    mkdir -p "$run_dir"
+
+    local harness_name
+    harness_name="$(yaml_val "$harness" "name")"
+
+    log_info "Starting eval run: ${run_id}"
+    log_info "Harness: ${harness_name} (${harness})"
+    log_info "Suite: ${suite}, Model: ${model}, Agent: ${agent}"
+
+    # Save run metadata
+    jq -n \
+        --arg run_id "$run_id" \
+        --arg harness "$harness_name" \
+        --arg harness_path "$harness" \
+        --arg model "$model" \
+        --arg agent "$agent" \
+        --arg suite "$suite" \
+        --arg tag "$tag" \
+        --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --argjson max_turns "$max_turns" \
+        '{run_id: $run_id, harness: $harness, harness_path: $harness_path, model: $model, agent: $agent, suite: $suite, tag: $tag, timestamp: $timestamp, max_turns: $max_turns}' \
+        > "${run_dir}/meta.json"
+
+    # Collect evals to run
+    local eval_files=()
+    case "$suite" in
+        behavioral)
+            for f in "${EVALS_DIR}/behavioral/"*.yaml; do
+                [[ -f "$f" ]] && eval_files+=("$f")
+            done
+            ;;
+        capability)
+            for f in "${EVALS_DIR}/capability/"*.yaml; do
+                [[ -f "$f" ]] && eval_files+=("$f")
+            done
+            ;;
+        all)
+            for f in "${EVALS_DIR}/behavioral/"*.yaml "${EVALS_DIR}/capability/"*.yaml; do
+                [[ -f "$f" ]] && eval_files+=("$f")
+            done
+            ;;
+        *)
+            die "Unknown suite: $suite"
+            ;;
+    esac
+
+    if [[ ${#eval_files[@]} -eq 0 ]]; then
+        die "No evals found for suite: $suite"
+    fi
+
+    log_info "Found ${#eval_files[@]} eval(s) to run"
+    echo ""
+
+    local eval_num=0
+    for eval_yaml in "${eval_files[@]}"; do
+        (( eval_num++ ))
+        local eval_name
+        eval_name="$(yaml_val "$eval_yaml" "name")"
+        eval_name="${eval_name:-$(basename "$eval_yaml" .yaml)}"
+
+        log_info "[${eval_num}/${#eval_files[@]}] ${eval_name}"
+
+        local eval_result_dir="${run_dir}/evals/${eval_name}"
+        mkdir -p "$eval_result_dir"
+
+        if (( dry_run )); then
+            log_dim "  [dry-run] Would set up env, run agent, score"
+            emit_result "dry_run" "SKIP" "Dry run mode" > "${eval_result_dir}/score.json"
+            continue
+        fi
+
+        # Setup environment
+        log_dim "  Setting up eval environment..."
+        local eval_env
+        eval_env="$(setup_eval_env "$eval_yaml" "$harness")"
+
+        # Extract prompt from eval YAML
+        local prompt=""
+        local in_prompt=0
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^prompt:[[:space:]]*\| ]]; then
+                in_prompt=1
+                continue
+            fi
+            if (( in_prompt )); then
+                if [[ "$line" =~ ^[a-z] ]]; then
+                    in_prompt=0
+                    continue
+                fi
+                prompt+="${line#  }"$'\n'
+            fi
+        done < "$eval_yaml"
+
+        if [[ -z "$prompt" ]]; then
+            log_warn "  No prompt found in eval YAML, skipping"
+            emit_result "no_prompt" "SKIP" "No prompt defined" > "${eval_result_dir}/score.json"
+            cleanup_eval_env "$eval_env"
+            continue
+        fi
+
+        # Run agent
+        log_dim "  Running ${agent} (model: ${model}, max-turns: ${max_turns})..."
+        local transcript_file="${eval_result_dir}/transcript.json"
+
+        if run_agent "$eval_env" "$prompt" "$model" "$agent" "$max_turns" > "$transcript_file" 2>/dev/null; then
+            log_dim "  Agent completed"
+        else
+            log_warn "  Agent exited with error"
+        fi
+
+        # Capture artifacts
+        log_dim "  Capturing artifacts..."
+        capture_artifacts "$eval_env" "$eval_result_dir"
+
+        # Save eval metadata
+        local duration=0
+        [[ -f "${eval_result_dir}/duration.txt" ]] && duration="$(cat "${eval_result_dir}/duration.txt")"
+        jq -n \
+            --arg eval_name "$eval_name" \
+            --arg model "$model" \
+            --arg agent "$agent" \
+            --argjson duration "${duration:-0}" \
+            '{eval: $eval_name, model: $model, agent: $agent, duration_seconds: $duration}' \
+            > "${eval_result_dir}/meta.json"
+
+        # Score
+        log_dim "  Scoring..."
+        score_behavioral "$eval_yaml" "$transcript_file" "$eval_result_dir" > "${eval_result_dir}/score.json"
+
+        # Cleanup
+        cleanup_eval_env "$eval_env"
+
+        log_ok "  Done: ${eval_name}"
+    done
+
+    echo ""
+    print_summary "$run_dir"
+
+    log_info "Results saved to: ${run_dir}"
+}
+
+cmd_list() {
+    echo ""
+    echo -e "${BOLD}Available Evals${RESET}"
+    table_sep
+    printf "${BOLD}%-30s %-15s %s${RESET}\n" "NAME" "CATEGORY" "DESCRIPTION"
+    table_sep
+
+    for eval_yaml in "${EVALS_DIR}"/behavioral/*.yaml "${EVALS_DIR}"/capability/*.yaml; do
+        [[ -f "$eval_yaml" ]] || continue
+        local name category desc
+        name="$(yaml_val "$eval_yaml" "name")"
+        category="$(yaml_val "$eval_yaml" "category")"
+        desc="$(yaml_val "$eval_yaml" "description")"
+        printf "%-30s %-15s %s\n" "${name:-$(basename "$eval_yaml" .yaml)}" "${category:-?}" "${desc:-}"
+    done
+
+    table_sep
+    echo ""
+}
+
+cmd_compare() {
+    local tag1="$1" tag2="$2"
+
+    # Find run directories matching tags
+    local dir1="" dir2=""
+    for d in "${RESULTS_DIR}"/*/; do
+        [[ -d "$d" ]] || continue
+        local name
+        name="$(basename "$d")"
+        if [[ "$name" == *"${tag1}" ]]; then dir1="$d"; fi
+        if [[ "$name" == *"${tag2}" ]]; then dir2="$d"; fi
+    done
+
+    [[ -n "$dir1" ]] || die "No run found matching tag: $tag1"
+    [[ -n "$dir2" ]] || die "No run found matching tag: $tag2"
+
+    require_cmd jq
+    print_comparison "$dir1" "$dir2"
+}
+
+cmd_history() {
+    local limit=20
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --limit) limit="$2"; shift 2 ;;
+            *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    require_cmd jq
+    print_history "$RESULTS_DIR" "$limit"
+}
+
+cmd_report() {
+    local run_id="$1"
+    local run_dir="${RESULTS_DIR}/${run_id}"
+
+    if [[ ! -d "$run_dir" ]]; then
+        # Try partial match
+        for d in "${RESULTS_DIR}"/*/; do
+            if [[ "$(basename "$d")" == *"${run_id}"* ]]; then
+                run_dir="$d"
+                break
+            fi
+        done
+    fi
+
+    [[ -d "$run_dir" ]] || die "Run not found: $run_id"
+
+    require_cmd jq
+    print_summary "$run_dir"
+}
+
+cmd_score_session() {
+    local tool="claude"
+    local session_id=""
+    local limit=5
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --tool)    tool="$2"; shift 2 ;;
+            --session) session_id="$2"; shift 2 ;;
+            --limit)   limit="$2"; shift 2 ;;
+            *) die "Unknown option: $1" ;;
+        esac
+    done
+
+    require_cmd jq
+
+    local sessions=()
+
+    if [[ "$tool" == "claude" ]]; then
+        if [[ -n "$session_id" ]]; then
+            local found=""
+            for f in "$HOME"/.claude/projects/*/"${session_id}.jsonl"; do
+                [[ -f "$f" ]] && found="$f" && break
+            done
+            [[ -n "$found" ]] || die "Session not found: $session_id"
+            sessions+=("$found")
+        else
+            while IFS= read -r f; do
+                sessions+=("$f")
+            done < <(find "$HOME/.claude/projects" -name "*.jsonl" -type f 2>/dev/null | xargs ls -t 2>/dev/null | head -"$limit")
+        fi
+
+        [[ ${#sessions[@]} -gt 0 ]] || die "No Claude sessions found"
+
+        echo ""
+        log_info "Scoring ${#sessions[@]} Claude session(s)"
+
+        for transcript in "${sessions[@]}"; do
+            local sid
+            sid="$(basename "$transcript" .jsonl)"
+            local short="${sid:0:12}"
+            local project_dir
+            project_dir="$(basename "$(dirname "$transcript")")"
+
+            echo ""
+            echo -e "${BOLD}Session: ${short}...${RESET}  (${project_dir})"
+            table_sep
+
+            local results
+            results="$(analyze_session "$transcript")"
+
+            local pass=0 fail=0 warn=0 info=0
+            local count
+            count="$(echo "$results" | jq 'length')"
+
+            for ((i=0; i<count; i++)); do
+                local check result detail
+                check="$(echo "$results" | jq -r ".[$i].check")"
+                result="$(echo "$results" | jq -r ".[$i].result")"
+                detail="$(echo "$results" | jq -r ".[$i].detail")"
+
+                # Pretty name from check id
+                local pretty_name
+                pretty_name="$(echo "$check" | sed 's/_/ /g' | sed 's/\b\w/\U&/g')"
+
+                if [[ "$result" == "INFO" ]]; then
+                    # Print metrics
+                    local metrics
+                    metrics="$(echo "$results" | jq -r ".[$i].metrics | to_entries[] | \"    \(.key): \(.value)\"")"
+                    printf "  ${DIM}%-28s %s${RESET}\n" "$pretty_name" "$detail"
+                    echo "$metrics" | while IFS= read -r m; do echo -e "  ${DIM}${m}${RESET}"; done
+                    ((info++))
+                else
+                    local color="$GREEN"
+                    [[ "$result" == "FAIL" ]] && color="$RED"
+                    [[ "$result" == "WARN" ]] && color="$YELLOW"
+
+                    printf "  %-28s " "$pretty_name"
+                    echo -e "${color}${result}${RESET}  ${DIM}${detail}${RESET}"
+
+                    [[ "$result" == "PASS" ]] && ((pass++))
+                    [[ "$result" == "FAIL" ]] && ((fail++))
+                    [[ "$result" == "WARN" ]] && ((warn++))
+
+                    # Show evidence on failure
+                    if [[ "$result" == "FAIL" ]]; then
+                        local evidence
+                        evidence="$(echo "$results" | jq -r ".[$i].evidence[]?" 2>/dev/null)"
+                        if [[ -n "$evidence" ]]; then
+                            echo "$evidence" | head -3 | while IFS= read -r e; do
+                                echo -e "    ${RED}> ${e}${RESET}"
+                            done
+                        fi
+                    fi
+                fi
+            done
+
+            table_sep
+            local total=$((pass + fail + warn))
+            echo -e "  Score: ${BOLD}${pass} pass${RESET}, ${fail} fail, ${warn} warn (${total} checks)"
+        done
+        echo ""
+
+    elif [[ "$tool" == "opencode" ]]; then
+        if [[ -n "$session_id" ]]; then
+            log_info "Exporting OpenCode session: $session_id"
+            local tmpfile
+            tmpfile="$(mktemp /tmp/oc-export-XXXXXX.jsonl)"
+            opencode export "$session_id" > "$tmpfile" 2>/dev/null || die "Failed to export session: $session_id"
+            echo ""
+            echo -e "${BOLD}Session: ${session_id}${RESET}"
+            table_sep
+            local results
+            results="$(analyze_session "$tmpfile")"
+            echo "$results" | jq -r '.[] | select(.result != "INFO") | "  \(.check): \(.result) — \(.detail)"'
+            table_sep
+            rm -f "$tmpfile"
+        else
+            log_info "Recent OpenCode sessions:"
+            opencode session list 2>/dev/null | head -"$((limit + 2))"
+            echo ""
+            echo "Use: ai-eval score-session --tool opencode --session <SESSION_ID>"
+        fi
+    else
+        die "Unknown tool: $tool (supported: claude, opencode)"
+    fi
+}
+
+# --- Main ---
+
+if [[ $# -eq 0 ]]; then
+    usage
+fi
+
+command="$1"
+shift
+
+case "$command" in
+    run)     cmd_run "$@" ;;
+    list)    cmd_list ;;
+    compare)
+        [[ $# -ge 2 ]] || die "Usage: ai-eval compare TAG1 TAG2"
+        cmd_compare "$1" "$2"
+        ;;
+    history) cmd_history "$@" ;;
+    report)
+        [[ $# -ge 1 ]] || die "Usage: ai-eval report RUN_ID"
+        cmd_report "$1"
+        ;;
+    score-session) cmd_score_session "$@" ;;
+    help|--help|-h) usage ;;
+    *) die "Unknown command: $command. Run 'ai-eval help' for usage." ;;
+esac

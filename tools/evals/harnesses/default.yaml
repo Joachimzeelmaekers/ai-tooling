@@ -1,0 +1,6 @@
+name: dotfiles-default
+description: Current dotfiles harness
+agents_md: ~/.dotfiles/AGENTS.md
+skills_dir: ~/.dotfiles/skills
+hooks_dir: ~/.dotfiles/claude/.claude/hooks
+memory_md: ~/.dotfiles/MEMORY.md

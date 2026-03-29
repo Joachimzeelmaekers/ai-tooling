@@ -1,3 +1,5 @@
 tools/prompt-analysis/output/
 */*/output/
 presentations/
+tools/evals/results/
+!tools/evals/results/.gitkeep
