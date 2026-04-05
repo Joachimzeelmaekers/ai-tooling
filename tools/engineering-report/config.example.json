@@ -3,7 +3,11 @@
     "claude-code": { "enabled": true },
     "opencode": { "enabled": false },
     "cursor": { "enabled": false },
-    "codex": { "enabled": false }
+    "codex": { "enabled": false },
+    "continue": { "enabled": false },
+    "gemini": { "enabled": false },
+    "trae": { "enabled": false },
+    "windsurf": { "enabled": false }
   },
   "github": {
     "enabled": true,

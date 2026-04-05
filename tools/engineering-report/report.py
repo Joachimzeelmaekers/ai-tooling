@@ -32,6 +32,10 @@ PROVIDER_COLORS = {
     "opencode": "#b88a5a",      # warm bronze
     "cursor": "#6f8b6e",        # moss
     "codex": "#8b6f9b",         # muted plum
+    "continue": "#4f7f78",      # teal slate
+    "gemini": "#5f7c8a",        # steel blue
+    "trae": "#a07a65",          # muted clay
+    "windsurf": "#7f8c5a",      # olive
 }
 
 
@@ -712,6 +716,7 @@ def build_html(data: dict) -> str:
           <div class="btn-group" id="tokenTypeGroup">
             <button class="btn" data-value="input">Input</button>
             <button class="btn" data-value="output">Output</button>
+            <button class="btn" data-value="reasoning">Reasoning</button>
             <button class="btn active" data-value="total">Total</button>
           </div>
           <div class="btn-group" id="groupByGroup">
@@ -1279,9 +1284,10 @@ function groupData(groupBy) {{
     else if (groupBy === "week") bk = getWeekKey(hourKey);
     else bk = hourKey.slice(0, 7);
     if (!buckets[bk]) buckets[bk] = {{}};
-    if (!buckets[bk][msg.modelKey]) buckets[bk][msg.modelKey] = {{ input: 0, output: 0 }};
+    if (!buckets[bk][msg.modelKey]) buckets[bk][msg.modelKey] = {{ input: 0, output: 0, reasoning: 0 }};
     buckets[bk][msg.modelKey].input += msg.input || 0;
     buckets[bk][msg.modelKey].output += msg.output || 0;
+    buckets[bk][msg.modelKey].reasoning += msg.reasoning || 0;
   }}
   return buckets;
 }}
@@ -1357,10 +1363,11 @@ function renderTimeline() {{
 
   const datasets = visibleModels.map(m => {{
     const series = labels.map(l => {{
-      const b = grouped[l]?.[m.key] || {{ input: 0, output: 0 }};
+      const b = grouped[l]?.[m.key] || {{ input: 0, output: 0, reasoning: 0 }};
       if (tokenType === "input") return b.input;
       if (tokenType === "output") return b.output;
-      return b.input + b.output;
+      if (tokenType === "reasoning") return b.reasoning;
+      return b.input + b.output + b.reasoning;
     }});
 
     const firstRealIdx = series.findIndex(v => v > 0);
@@ -1708,7 +1715,7 @@ function markdownToHtml(md) {{
     if (/^### (.+)/.test(line)) {{ out.push("<h3>" + inline(line.slice(4)) + "</h3>"); i++; continue; }}
     if (/^## (.+)/.test(line)) {{ out.push("<h2>" + inline(line.slice(3)) + "</h2>"); i++; continue; }}
     // HR
-    if (/^---\s*$/.test(line)) {{ out.push("<hr>"); i++; continue; }}
+    if (/^---\\s*$/.test(line)) {{ out.push("<hr>"); i++; continue; }}
     // Blockquote
     if (/^> (.+)/.test(line)) {{ out.push("<blockquote>" + inline(line.slice(2)) + "</blockquote>"); i++; continue; }}
     // Unordered list
@@ -1742,8 +1749,8 @@ function markdownToHtml(md) {{
 
 function inline(s) {{
   return s
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/\\*\\*(.+?)\\*\\*/g, "<strong>$1</strong>")
+    .replace(/\\*(.+?)\\*/g, "<em>$1</em>")
     .replace(/`([^`]+)`/g, "<code>$1</code>");
 }}
 

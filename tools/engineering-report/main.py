@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 
 from providers.base import ProviderResult
-from providers import opencode, claude, cursor, codex
+from providers import opencode, claude, cursor, codex, continueai, gemini, trae, windsurf
 from providers import github_prs
 from pricing import estimate_cost
 from report import build_html
@@ -29,6 +29,10 @@ ALL_PROVIDERS = [
     ("opencode", opencode.load),
     ("cursor", cursor.load),
     ("codex", codex.load),
+    ("continue", continueai.load),
+    ("gemini", gemini.load),
+    ("trae", trae.load),
+    ("windsurf", windsurf.load),
 ]
 PROVIDERS = [(name, fn) for name, fn in ALL_PROVIDERS if is_provider_enabled(name)]
 

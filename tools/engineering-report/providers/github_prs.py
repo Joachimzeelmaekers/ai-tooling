@@ -86,6 +86,65 @@ def _parse_nodes(nodes: list) -> list[PullRequest]:
     return prs
 
 
+def _dedupe_prs(prs: list[PullRequest]) -> list[PullRequest]:
+    seen = set()
+    unique = []
+    for pr in prs:
+        if pr.url and pr.url in seen:
+            continue
+        if pr.url:
+            seen.add(pr.url)
+        unique.append(pr)
+    return unique
+
+
+def _fetch_prs_for_day(day: str) -> list[PullRequest]:
+    """Fetch PRs authored by current user for a single UTC day (YYYY-MM-DD)."""
+    username = _get_username()
+    if not username:
+        return []
+
+    prs = []
+    cursor = None
+    query_range = f"{day}..{day}"
+
+    while True:
+        after = f', after: "{cursor}"' if cursor else ""
+        query = f"""{{
+  search(query: "is:pr author:{username} created:{query_range}", type: ISSUE, first: 100{after}) {{
+    pageInfo {{ hasNextPage endCursor }}
+    nodes {{
+      ... on PullRequest {{
+        title
+        url
+        createdAt
+        mergedAt
+        closedAt
+        state
+        repository {{ nameWithOwner owner {{ login }} }}
+        additions
+        deletions
+        changedFiles
+      }}
+    }}
+  }}
+}}"""
+        data = _run_gh(query)
+        nodes = (data.get("data") or {}).get("search", {}).get("nodes", [])
+        page_info = (data.get("data") or {}).get("search", {}).get("pageInfo", {})
+
+        if not nodes:
+            break
+
+        prs.extend(_parse_nodes([n for n in nodes if n]))
+
+        if not page_info.get("hasNextPage"):
+            break
+        cursor = page_info.get("endCursor")
+
+    return prs
+
+
 def _fetch_prs_since(since: str | None = None) -> list[PullRequest]:
     """Fetch PRs, optionally only those created after `since` (ISO date).
 
@@ -311,6 +370,12 @@ def _is_window_current(window: str) -> bool:
     return start <= today <= end
 
 
+def _today_window() -> str:
+    """Single-day window for today (UTC)."""
+    d = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return f"{d}..{d}"
+
+
 def _fetch_reviews_windowed(windows_to_fetch: list[str], cached_windows: dict) -> tuple[dict, list[Review]]:
     """Fetch reviews for specific windows. Returns updated window map and all new reviews."""
     username = _get_username()
@@ -392,14 +457,15 @@ def _load_reviews() -> list[Review]:
         print(f"  [github] review cache has {len(cached_reviews)} reviews across {len(cached_windows)} windows")
 
         # Find windows that need fetching:
-        # 1. Windows not in cache at all (new or previously failed)
-        # 2. The current window (still accumulating)
+        # 1. Half-year windows not in cache at all (new or previously failed)
+        # 2. Always fetch TODAY only (full-day TTL behavior)
         windows_to_fetch = []
         for w in all_windows:
             if w not in cached_windows:
                 windows_to_fetch.append(w)
-            elif _is_window_current(w):
-                windows_to_fetch.append(w)
+
+        today = _today_window()
+        windows_to_fetch.append(today)
 
         if not windows_to_fetch:
             print(f"  [github] all windows cached, no fetch needed")
@@ -446,6 +512,21 @@ def load() -> GitHubPRResult:
     if cached is not None:
         cached_prs, newest = cached
         print(f"  [github] cache has {len(cached_prs)} PRs (newest: {newest[:10] if newest else 'n/a'})")
+
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        newest_day = newest[:10] if newest else ""
+
+        # Full-day TTL behavior:
+        # - If newest cache day is today, only refresh today's slice.
+        # - Otherwise, run incremental since newest to catch uncached days.
+        if newest_day == today:
+            print(f"  [github] refreshing today's PRs: {today}..{today}")
+            today_prs = _fetch_prs_for_day(today)
+            kept = [pr for pr in cached_prs if (pr.created_at[:10] if pr.created_at else "") != today]
+            all_prs = _dedupe_prs(kept + today_prs)
+            _save_cache(all_prs)
+            reviews = _load_reviews()
+            return GitHubPRResult(prs=all_prs, reviews=reviews, total=len(all_prs), source="incremental")
 
         # Fetch only new PRs since the newest cached one
         print(f"  [github] fetching new PRs since {newest[:10]}...")

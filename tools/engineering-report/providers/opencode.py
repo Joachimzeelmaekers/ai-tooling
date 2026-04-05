@@ -1,4 +1,4 @@
-"""OpenCode provider — reads from ~/.local/share/opencode/opencode.db or JSON fallback."""
+"""OpenCode provider — reads from opencode.db or JSON storage fallback."""
 
 import glob
 import json
@@ -7,28 +7,33 @@ import sqlite3
 
 from .base import TokenMessage, ProviderResult
 
-OPENCODE_DIR = os.path.expanduser("~/.local/share/opencode")
-DB_PATH = os.path.join(OPENCODE_DIR, "opencode.db")
-STORAGE_DIR = os.path.join(OPENCODE_DIR, "storage")
-
 PROVIDER_NAME = "opencode"
 
 # Models to exclude (local inference)
 EXCLUDE_PATTERNS = ("mlx", "qwen")
 
 
-def _load_sessions_sqlite():
+def _candidate_roots() -> list[str]:
+    home = os.path.expanduser("~")
+    return [
+        os.path.join(home, ".local", "share", "opencode"),
+        os.path.join(home, "Library", "Application Support", "opencode"),
+        os.path.join(home, ".config", "opencode"),
+    ]
+
+
+def _load_sessions_sqlite(db_path: str):
     sessions = {}
-    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     for row in conn.execute("SELECT id, directory, title FROM session"):
         sessions[row[0]] = {"id": row[0], "directory": row[1], "title": row[2]}
     conn.close()
     return sessions
 
 
-def _load_sessions_json():
+def _load_sessions_json(storage_dir: str):
     sessions = {}
-    for f in glob.glob(f"{STORAGE_DIR}/session/**/*.json", recursive=True):
+    for f in glob.glob(f"{storage_dir}/session/**/*.json", recursive=True):
         try:
             d = json.load(open(f))
             sessions[d["id"]] = d
@@ -38,45 +43,51 @@ def _load_sessions_json():
 
 
 def load() -> ProviderResult:
-    if not os.path.exists(OPENCODE_DIR):
+    roots = [r for r in _candidate_roots() if os.path.exists(r)]
+    if not roots:
         return ProviderResult(name=PROVIDER_NAME, source="not found")
 
-    # Load sessions
     sessions = {}
-    if os.path.exists(DB_PATH):
-        try:
-            sessions = _load_sessions_sqlite()
-        except Exception:
-            sessions = _load_sessions_json()
-    else:
-        sessions = _load_sessions_json()
-
-    # Load messages
     raw_messages = []
     source = "json"
 
-    if os.path.exists(DB_PATH):
-        try:
-            conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
-            for row in conn.execute("SELECT session_id, data FROM message"):
-                d = json.loads(row[1])
-                d["sessionID"] = row[0]
-                if d.get("role") == "assistant" and "tokens" in d:
-                    raw_messages.append(d)
-            conn.close()
-            source = "sqlite"
-        except Exception:
-            raw_messages = []
+    for root in roots:
+        db_path = os.path.join(root, "opencode.db")
+        storage_dir = os.path.join(root, "storage")
 
-    if not raw_messages:
-        for f in glob.glob(f"{STORAGE_DIR}/message/**/*.json", recursive=True):
+        root_sessions = {}
+        if os.path.exists(db_path):
             try:
-                d = json.load(open(f))
-                if d.get("role") == "assistant" and "tokens" in d:
-                    raw_messages.append(d)
+                root_sessions = _load_sessions_sqlite(db_path)
             except Exception:
-                pass
-        source = "json"
+                root_sessions = _load_sessions_json(storage_dir)
+        else:
+            root_sessions = _load_sessions_json(storage_dir)
+        sessions.update(root_sessions)
+
+        loaded_from_sqlite = False
+        if os.path.exists(db_path):
+            try:
+                conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                for row in conn.execute("SELECT session_id, data FROM message"):
+                    d = json.loads(row[1])
+                    d["sessionID"] = row[0]
+                    if d.get("role") == "assistant":
+                        raw_messages.append(d)
+                conn.close()
+                loaded_from_sqlite = True
+                source = "sqlite"
+            except Exception:
+                loaded_from_sqlite = False
+
+        if not loaded_from_sqlite:
+            for f in glob.glob(f"{storage_dir}/message/**/*.json", recursive=True):
+                try:
+                    d = json.load(open(f))
+                    if d.get("role") == "assistant":
+                        raw_messages.append(d)
+                except Exception:
+                    pass
 
     # Normalize
     messages = []
@@ -89,7 +100,7 @@ def load() -> ProviderResult:
         if any(p in model_key.lower() for p in EXCLUDE_PATTERNS):
             continue
 
-        t = msg["tokens"]
+        t = msg.get("tokens", {}) if isinstance(msg.get("tokens"), dict) else {}
         ts_ms = msg.get("time", {}).get("created", 0)
 
         # Resolve project from message or session

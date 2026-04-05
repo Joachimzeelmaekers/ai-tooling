@@ -1,4 +1,4 @@
-"""Codex CLI provider — reads from ~/.codex/sessions/ JSONL files.
+"""Codex CLI provider — reads from Codex session JSONL files.
 
 Each session has:
   - session_meta: id, timestamp, cwd, model_provider, cli_version
@@ -14,19 +14,28 @@ from datetime import datetime, timezone
 
 from .base import TokenMessage, ProviderResult
 
-CODEX_DIR = os.path.expanduser("~/.codex")
-SESSIONS_DIR = os.path.join(CODEX_DIR, "sessions")
-CONFIG_FILE = os.path.join(CODEX_DIR, "config.toml")
-
 PROVIDER_NAME = "codex"
 
 
-def _get_configured_model() -> str:
+def _installation_dirs() -> list[str]:
+    home = os.path.expanduser("~")
+    candidates = [
+        os.path.join(home, ".codex"),
+        os.path.join(home, ".codex-local"),
+        os.path.join(home, "codex"),
+        os.path.join(home, "codex-local"),
+        os.path.join(home, ".config", "codex"),
+        os.path.join(home, ".local", "share", "codex"),
+    ]
+    return [p for p in sorted(set(candidates)) if os.path.exists(p)]
+
+
+def _get_configured_model(config_file: str) -> str:
     """Read model from config.toml."""
-    if not os.path.exists(CONFIG_FILE):
+    if not os.path.exists(config_file):
         return "gpt-5.3-codex"
     try:
-        with open(CONFIG_FILE) as f:
+        with open(config_file) as f:
             for line in f:
                 line = line.strip()
                 if line.startswith("model") and "=" in line:
@@ -37,16 +46,29 @@ def _get_configured_model() -> str:
 
 
 def load() -> ProviderResult:
-    if not os.path.exists(SESSIONS_DIR):
+    install_dirs = _installation_dirs()
+    if not install_dirs:
         return ProviderResult(name=PROVIDER_NAME, source="not found")
-
-    model = _get_configured_model()
-    files = glob.glob(f"{SESSIONS_DIR}/**/*.jsonl", recursive=True)
 
     messages = []
     session_ids = set()
 
+    files = []
+    models_by_root = {}
+    for root in install_dirs:
+        models_by_root[root] = _get_configured_model(os.path.join(root, "config.toml"))
+        files.extend(glob.glob(os.path.join(root, "sessions", "**", "*.jsonl"), recursive=True))
+        files.extend(glob.glob(os.path.join(root, "projects", "**", "*.jsonl"), recursive=True))
+    files = sorted(set(files))
+
     for filepath in files:
+        root = ""
+        for r in install_dirs:
+            if filepath.startswith(r):
+                root = r
+                break
+        model = models_by_root.get(root, "gpt-5.3-codex")
+
         meta = None
         last_total_usage = None
 
@@ -66,15 +88,17 @@ def load() -> ProviderResult:
                     info = p.get("info")
                     if info and info.get("total_token_usage"):
                         last_total_usage = info["total_token_usage"]
+                elif t == "event_msg" and isinstance(p, dict) and p.get("type") == "agent_message":
+                    model = p.get("model") or p.get("modelId") or model
 
-        if not meta or not last_total_usage:
+        if not meta and not last_total_usage:
             continue
 
-        sid = meta.get("id", "")
+        sid = (meta or {}).get("id", "") or os.path.splitext(os.path.basename(filepath))[0]
         session_ids.add(sid)
 
         ts_ms = 0
-        ts_str = meta.get("timestamp", "")
+        ts_str = (meta or {}).get("timestamp", "")
         if ts_str:
             try:
                 dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
@@ -82,12 +106,13 @@ def load() -> ProviderResult:
             except Exception:
                 pass
 
-        project = meta.get("cwd", "")
+        project = (meta or {}).get("cwd", "")
 
-        inp = last_total_usage.get("input_tokens", 0)
-        out = last_total_usage.get("output_tokens", 0)
-        cached = last_total_usage.get("cached_input_tokens", 0)
-        reasoning = last_total_usage.get("reasoning_output_tokens", 0)
+        usage = last_total_usage or {}
+        inp = usage.get("input_tokens", 0)
+        out = usage.get("output_tokens", 0)
+        cached = usage.get("cached_input_tokens", 0)
+        reasoning = usage.get("reasoning_output_tokens", 0)
 
         messages.append(TokenMessage(
             provider=PROVIDER_NAME,
