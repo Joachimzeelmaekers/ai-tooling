@@ -211,62 +211,51 @@ def _load_all_snapshots() -> list:
 
 
 def _merge_results(fresh_results: list[ProviderResult]) -> list[ProviderResult]:
-    """Merge fresh provider data with historical snapshots to get complete dataset."""
-    import glob
-    
-    # Dedupe key: (provider, session_id, timestamp_ms, model, input_tokens, output_tokens)
+    """Merge fresh provider data with historical snapshots.
+
+    Identity is (provider, session_id, model) — volatile fields (token counts)
+    are not part of the key, so a session that grew between scans does not
+    create duplicate rows.
+
+    Fresh data wins over snapshot data for matching keys: an active session's
+    latest token totals replace the older snapshotted ones. The snapshot only
+    contributes sessions that no longer appear in the fresh scan (archived,
+    deleted, or moved out of the install dirs).
+    """
     seen = set()
     merged_by_provider = defaultdict(list)
-    
-    # First, load all historical snapshots
-    for snapshot in _load_all_snapshots():
-        for provider_name, provider_data in snapshot.items():
-            for msg_dict in provider_data.get("messages", []):
-                key = (
-                    msg_dict["provider"],
-                    msg_dict["session_id"],
-                    msg_dict["timestamp_ms"],
-                    msg_dict["model"],
-                    msg_dict["input_tokens"],
-                    msg_dict["output_tokens"],
-                )
-                if key not in seen:
-                    seen.add(key)
-                    merged_by_provider[provider_name].append(msg_dict)
-    
-    # Then add fresh data (to capture new sessions since last snapshot)
+
+    # Fresh first — its token counts are authoritative for sessions still on disk.
     for result in fresh_results:
         for msg in result.messages:
             msg_dict = _msg_to_dict(msg)
-            key = (
-                msg_dict["provider"],
-                msg_dict["session_id"],
-                msg_dict["timestamp_ms"],
-                msg_dict["model"],
-                msg_dict["input_tokens"],
-                msg_dict["output_tokens"],
-            )
+            key = (msg_dict["provider"], msg_dict["session_id"], msg_dict["model"])
             if key not in seen:
                 seen.add(key)
                 merged_by_provider[result.name].append(msg_dict)
-    
-    # Convert back to ProviderResult
+
+    # Snapshot fills in only sessions absent from fresh.
+    for snapshot in _load_all_snapshots():
+        for provider_name, provider_data in snapshot.items():
+            for msg_dict in provider_data.get("messages", []):
+                key = (msg_dict["provider"], msg_dict["session_id"], msg_dict["model"])
+                if key not in seen:
+                    seen.add(key)
+                    merged_by_provider[provider_name].append(msg_dict)
+
     from providers.base import ProviderResult
     results = []
     for name, load_fn in PROVIDERS:
         messages = [_dict_to_msg(m) for m in merged_by_provider.get(name, [])]
         sessions = len(set(m.session_id for m in messages))
-        # Determine source - if has historical data, note it
-        source = "merged"
-        if messages:
-            source = "merged+snapshot"
+        source = "merged+snapshot" if messages else "merged"
         results.append(ProviderResult(
             name=name,
             messages=messages,
             sessions=sessions,
             source=source,
         ))
-    
+
     return results
 
 
