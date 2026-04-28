@@ -213,35 +213,27 @@ def _load_all_snapshots() -> list:
 def _merge_results(fresh_results: list[ProviderResult]) -> list[ProviderResult]:
     """Merge fresh provider data with historical snapshots.
 
-    Identity is (provider, session_id, model) — volatile fields (token counts)
-    are not part of the key, so a session that grew between scans does not
-    create duplicate rows.
-
-    Fresh data wins over snapshot data for matching keys: an active session's
-    latest token totals replace the older snapshotted ones. The snapshot only
-    contributes sessions that no longer appear in the fresh scan (archived,
-    deleted, or moved out of the install dirs).
+    Fresh data is authoritative for any session_id it covers — every fresh
+    message passes through unchanged. The snapshot only contributes messages
+    from sessions that no longer appear in fresh (archived/deleted).
     """
-    seen = set()
+    fresh_sessions = defaultdict(set)  # provider -> set of session_ids
     merged_by_provider = defaultdict(list)
 
-    # Fresh first — its token counts are authoritative for sessions still on disk.
+    # Fresh: keep every message; remember which (provider, session_id) pairs we have.
     for result in fresh_results:
         for msg in result.messages:
             msg_dict = _msg_to_dict(msg)
-            key = (msg_dict["provider"], msg_dict["session_id"], msg_dict["model"])
-            if key not in seen:
-                seen.add(key)
-                merged_by_provider[result.name].append(msg_dict)
+            fresh_sessions[msg_dict["provider"]].add(msg_dict["session_id"])
+            merged_by_provider[result.name].append(msg_dict)
 
     # Snapshot fills in only sessions absent from fresh.
     for snapshot in _load_all_snapshots():
         for provider_name, provider_data in snapshot.items():
             for msg_dict in provider_data.get("messages", []):
-                key = (msg_dict["provider"], msg_dict["session_id"], msg_dict["model"])
-                if key not in seen:
-                    seen.add(key)
-                    merged_by_provider[provider_name].append(msg_dict)
+                if msg_dict["session_id"] in fresh_sessions.get(msg_dict["provider"], set()):
+                    continue
+                merged_by_provider[provider_name].append(msg_dict)
 
     from providers.base import ProviderResult
     results = []
@@ -388,21 +380,34 @@ def main():
     ms = data["model_stats"]
     total_in = sum(v["input"] for v in ms.values())
     total_out = sum(v["output"] for v in ms.values())
+    total_cr = sum(v["cache_read"] for v in ms.values())
+    total_cw = sum(v["cache_write"] for v in ms.values())
+    grand_total = total_in + total_out + total_cr + total_cw
     print(f"\nSummary:")
-    print(f"  Sessions : {data['total_sessions']:,}")
-    print(f"  Messages : {data['total_messages']:,}")
-    print(f"  Input    : {total_in:,} tokens")
-    print(f"  Output   : {total_out:,} tokens")
+    print(f"  Sessions       : {data['total_sessions']:,}")
+    print(f"  Messages       : {data['total_messages']:,}")
+    print(f"  Input          : {total_in:,} tokens")
+    print(f"  Output         : {total_out:,} tokens")
+    print(f"  Cache creation : {total_cw:,} tokens")
+    print(f"  Cache read     : {total_cr:,} tokens")
+    print(f"  Grand total    : {grand_total:,} tokens")
 
     for pname, pt in sorted(data["provider_totals"].items()):
+        # Provider-level cache totals (rebuild from model_stats since provider_totals doesn't track them)
+        p_cr = sum(v["cache_read"] for v in ms.values() if v["provider"] == pname)
+        p_cw = sum(v["cache_write"] for v in ms.values() if v["provider"] == pname)
+        p_total = pt["input"] + pt["output"] + p_cr + p_cw
         print(f"\n  [{pname}]")
         print(f"    Messages: {pt['messages']:,}  Sessions: {pt['sessions']:,}")
         print(f"    Input: {pt['input']:,}  Output: {pt['output']:,}")
+        print(f"    Cache write: {p_cw:,}  Cache read: {p_cr:,}")
+        print(f"    Total tokens: {p_total:,}")
         print(f"    Est. Cost: ${pt['cost_estimated']:.2f}")
 
     print()
-    for key, v in sorted(ms.items(), key=lambda x: x[1]["input"] + x[1]["output"], reverse=True):
-        print(f"  {key:<40}  {v['input']+v['output']:>12,} tokens  ({v['messages']} msgs)  [{v['provider']}]")
+    for key, v in sorted(ms.items(), key=lambda x: x[1]["input"] + x[1]["output"] + x[1]["cache_read"] + x[1]["cache_write"], reverse=True):
+        total = v["input"] + v["output"] + v["cache_read"] + v["cache_write"]
+        print(f"  {key:<40}  {total:>16,} tokens  ({v['messages']} msgs)  [{v['provider']}]")
 
 
 if __name__ == "__main__":
