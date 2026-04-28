@@ -31,6 +31,8 @@ PRICING = {
     # Claude (Anthropic) — used by Claude Code
     # Format: (base_input, output, cache_read, cache_write_5m)
     # -------------------------------------------------------------------------
+    # Opus 4.7 pricing not yet public — assumed equal to Opus 4.6 baseline.
+    "claude-opus-4-7":             (5.00, 25.00, 0.50, 6.25),
     "claude-opus-4-6":             (5.00, 25.00, 0.50, 6.25),
     "claude-opus-4-5-20251101":    (5.00, 25.00, 0.50, 6.25),
     "claude-opus-4-1":             (15.00, 75.00, 1.50, 18.75),
